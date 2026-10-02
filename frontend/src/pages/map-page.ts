@@ -8,6 +8,10 @@ interface MapNode {
   lon: number;
 }
 
+interface MessageMapPoint { key: string; name: string; lat: number; lon: number; }
+interface MessageMapRoute { points: MessageMapPoint[]; hashPath: string[]; snr?: number; rssi?: number; }
+interface MessageMapState { sender: string; target: string; text: string; timestamp?: string; routes: MessageMapRoute[]; }
+
 const TILE_SIZE = 256;
 const MIN_ZOOM = 2;
 const MAX_ZOOM = 18;
@@ -44,18 +48,23 @@ export class MapPage extends LitElement {
   @property({ type: Object }) config?: PanelConfig;
   @property({ type: Array }) contacts: Contact[] = [];
   @property({ type: Boolean }) narrow = false;
+  @property({ type: String }) devicePrefix = '';
 
   @state() private _selectedKey: string | null = null;
   @state() private _center: [number, number] = DEFAULT_CENTER;
   @state() private _zoom = 5;
   @state() private _mapSize = { width: 0, height: 0 };
   @state() private _deviceSearch = '';\n  @state() private _deviceSort: 'name' | 'activity' = 'name';\n  @state() private _activityNow = Date.now();
+  @state() private _showMessage = false;
+  @state() private _messageMap: MessageMapState | null = null;
 
   private _mapEl?: HTMLElement;
   private _resizeObserver?: ResizeObserver;
   private _dragging = false;
   private _dragStart = { x: 0, y: 0 };
   private _dragCenterPx = { x: 0, y: 0 };\n  private _wheelZoomTimer?: number;\n  private _pendingZoomDelta = 0;\n  private _activityTimer?: number;
+  private _messageUnsubscribers: Array<() => void> = [];
+  private _messageSubscriptionsActive = false;
   private _tilePreloadCache = new Map<string, HTMLImageElement>();
 
   static styles = css`
@@ -166,7 +175,24 @@ export class MapPage extends LitElement {
       opacity: .55;
     }
 
-    .sort-select {\n      padding: 8px 10px;\n      border-bottom: 1px solid var(--divider-color, #e0e0e0);\n      flex-shrink: 0;\n    }\n\n    .sort-select select {\n      width: 100%;\n      box-sizing: border-box;\n      padding: 7px 9px;\n      border: 1px solid var(--divider-color, #ccc);\n      border-radius: 7px;\n      background: var(--primary-background-color, #fafafa);\n      color: var(--primary-text-color);\n      font: inherit;\n      font-size: 12px;\n    }\n\n    .node-list {
+    .sort-select {\n      padding: 8px 10px;\n      border-bottom: 1px solid var(--divider-color, #e0e0e0);\n      flex-shrink: 0;\n    }\n\n    .sort-select select {\n      width: 100%;\n      box-sizing: border-box;\n      padding: 7px 9px;\n      border: 1px solid var(--divider-color, #ccc);\n      border-radius: 7px;\n      background: var(--primary-background-color, #fafafa);\n      color: var(--primary-text-color);\n      font: inherit;\n      font-size: 12px;\n    }\n\n    .message-toggle {
+      padding: 9px 10px;
+      border-bottom: 1px solid var(--divider-color, #e0e0e0);
+      flex-shrink: 0;
+    }
+    .message-toggle label {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      color: var(--primary-text-color);
+      font-size: 13px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .message-toggle input { width: 17px; height: 17px; margin: 0; accent-color: var(--primary-color, #03a9f4); }
+    .message-toggle small { display: block; margin: 3px 0 0 26px; color: var(--secondary-text-color); font-size: 10px; }
+
+    .node-list {
       overflow-y: auto;
       min-height: 0;
       flex: 1;
@@ -301,6 +327,17 @@ export class MapPage extends LitElement {
       pointer-events: none;
       overflow: visible;
     }
+    .message-route-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: visible; }
+    .message-route { fill: none; stroke: rgba(3,169,244,.9); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
+    .message-route.secondary { stroke: rgba(255,152,0,.72); stroke-width: 2.5; }
+    .message-hop { fill: var(--card-background-color,#fff); stroke: var(--primary-color,#03a9f4); stroke-width: 2; }
+    .message-hop-label { font-size: 10px; font-weight: 600; fill: var(--primary-text-color,#222); paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 3px; stroke-linejoin: round; }
+    .message-bubble { position: absolute; z-index: 5; max-width: min(360px,calc(100% - 32px)); min-width: 180px; padding: 10px 12px; border: 1px solid rgba(3,169,244,.45); border-radius: 12px; background: rgba(255,255,255,.94); color: #222; box-shadow: 0 4px 16px rgba(0,0,0,.28); transform: translate(14px,calc(-100% - 14px)); pointer-events: none; overflow: hidden; }
+    .message-bubble::after { content: ''; position: absolute; left: 10px; bottom: -7px; width: 14px; height: 14px; background: rgba(255,255,255,.94); border-right: 1px solid rgba(3,169,244,.45); border-bottom: 1px solid rgba(3,169,244,.45); transform: rotate(45deg); }
+    .message-bubble-title { position: relative; z-index: 1; font-size: 12px; font-weight: 700; color: var(--primary-color,#03a9f4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .message-bubble-sender { position: relative; z-index: 1; margin-top: 2px; font-size: 10px; color: var(--secondary-text-color,#666); }
+    .message-bubble-text { position: relative; z-index: 1; margin-top: 5px; font-size: 13px; line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .message-bubble-route { position: relative; z-index: 1; margin-top: 6px; font-size: 10px; color: var(--secondary-text-color,#666); }
 
     .marker {
       position: absolute;
@@ -458,6 +495,8 @@ export class MapPage extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this._messageSubscriptionsActive = true;
+    this._setupMessageSubscriptions();
     this._resizeObserver = new ResizeObserver(entries => {
       const entry = entries[0];
       if (!entry) return;
@@ -474,6 +513,8 @@ export class MapPage extends LitElement {
       window.clearTimeout(this._tileTransitionTimer);
       this._tileTransitionTimer = undefined;
     }
+    this._messageSubscriptionsActive = false;
+    this._teardownMessageSubscriptions();
     this._tilePreloadCache.clear();
     if (this._panAnimationFrame !== undefined) {
       window.cancelAnimationFrame(this._panAnimationFrame);
@@ -491,6 +532,7 @@ export class MapPage extends LitElement {
   }
 
   protected updated(changed: Map<string, unknown>) {
+    if (changed.has('hass') || changed.has('devicePrefix')) this._setupMessageSubscriptions();
     this._applyPanTransform();
     if (changed.has('contacts')) {
       const hadSelected = this._selectedKey && this.contacts.some(
