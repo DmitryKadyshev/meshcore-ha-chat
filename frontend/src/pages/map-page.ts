@@ -1186,8 +1186,7 @@ export class MapPage extends LitElement {
                         })}
                       `;
                     })()}
-                      `;
-                    })}
+
                   </svg>
                   ${this._messageMap ? (() => {
                     const bubble = this._messageBubblePoint();
