@@ -145,10 +145,21 @@ export class MapPage extends LitElement {
       font-variant-numeric: tabular-nums;
     }
 
-    .activity.green { background: #2eaa55; }
-    .activity.yellow { background: #e0a800; }
-    .activity.red { background: #d64545; }
-    .activity.gray { background: #858585; }
+    .activity {
+      --activity-hue: 0;
+      --activity-sat: 65%;
+      --activity-light: 46%;
+      background: hsl(var(--activity-hue) var(--activity-sat) var(--activity-light));
+    }
+
+    .activity.green { --activity-hue: 142; }
+    .activity.yellow { --activity-hue: 45; }
+    .activity.red { --activity-hue: 0; }
+    .activity.gray {
+      --activity-hue: 0;
+      --activity-sat: 0%;
+      --activity-light: 52%;
+    }
 
     .node.no-location .activity {
       opacity: .55;
@@ -418,7 +429,7 @@ export class MapPage extends LitElement {
     return contact.adv_name || contact.pubkey_prefix || 'Unknown node';
   }
 
-  private _activity(contact: Contact): { className: string; label: string; title: string } {
+  private _activity(contact: Contact): { className: string; label: string; title: string; style?: string } {
     const timestamp = Number(contact.last_advert);
     if (!Number.isFinite(timestamp) || timestamp <= 0) {
       return { className: 'gray', label: '—', title: 'No activity timestamp' };
@@ -429,10 +440,22 @@ export class MapPage extends LitElement {
     const ageMinutes = Math.floor(ageMs / 60_000);
 
     let className: string;
-    if (ageMs < 60 * 60_000) className = 'green';
-    else if (ageMs < 3 * 60 * 60_000) className = 'yellow';
-    else if (ageMs < 24 * 60 * 60_000) className = 'red';
-    else className = 'gray';
+    let style: string | undefined;
+    if (ageMs < 60 * 60_000) {
+      className = 'green';
+      const progress = ageMs / (60 * 60_000);
+      style = `--activity-hue:${Math.round(142 - 97 * progress)}`;
+    } else if (ageMs < 3 * 60 * 60_000) {
+      className = 'yellow';
+      const progress = (ageMs - 60 * 60_000) / (2 * 60 * 60_000);
+      style = `--activity-hue:${Math.round(45 - 45 * progress)}`;
+    } else if (ageMs < 24 * 60 * 60_000) {
+      className = 'red';
+      const progress = (ageMs - 3 * 60 * 60_000) / (21 * 60 * 60_000);
+      style = `--activity-light:${Math.round(46 - 10 * progress)}%`;
+    } else {
+      className = 'gray';
+    }
 
     let label: string;
     if (ageMinutes < 1) label = '<1m';
@@ -444,7 +467,7 @@ export class MapPage extends LitElement {
       ? 'Active less than 1 minute ago'
       : `Last advert: ${label} ago`;
 
-    return { className, label, title };
+    return { className, label, title, style };
   }
 
   private _fitAll() {
@@ -656,7 +679,7 @@ export class MapPage extends LitElement {
                       ?disabled=${!located}
                       title=${located ? `Focus on ${this._name(contact)}` : 'No coordinates available'}
                       @click=${() => this._focus(contact)}>
-                      <span class="activity ${activity.className}" title=${activity.title} aria-label=${activity.title}>${activity.label}</span>
+                      <span class="activity ${activity.className}" style=${activity.style || nothing} title=${activity.title} aria-label=${activity.title}>${activity.label}</span>
                       <span>
                         <span class="node-name">${this._name(contact)}</span>
                         <span class="node-prefix">${contact.pubkey_prefix || ''}</span>
