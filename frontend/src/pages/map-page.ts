@@ -10,7 +10,7 @@ interface MapNode {
 
 interface MessageMapPoint { key: string; name: string; lat: number; lon: number; }
 interface MessageMapRoute { points: MessageMapPoint[]; hashPath: string[]; snr?: number; rssi?: number; }
-interface MessageMapState { sender: string; target: string; text: string; timestamp?: string; routes: MessageMapRoute[]; }
+interface MessageMapState { sender: string; target: string; text: string; channel?: string; pubkeyPrefix?: string; timestamp?: string; routes: MessageMapRoute[]; }
 
 const TILE_SIZE = 256;
 const MIN_ZOOM = 2;
@@ -632,7 +632,14 @@ export class MapPage extends LitElement {
       }
       if (text && current.text !== text) return;
       if (sender && current.sender !== sender) return;
-      this._messageMap = this._buildMessageMap(data);
+      this._messageMap = this._buildMessageMap({
+        ...data,
+        sender_name: current.sender,
+        message: current.text,
+        channel: current.channel,
+        pubkey_prefix: current.pubkeyPrefix,
+        timestamp: current.timestamp,
+      });
       this._fitMessage();
     });
   }
@@ -696,7 +703,15 @@ export class MapPage extends LitElement {
         rssi: Number.isFinite(Number(rx.rssi)) ? Number(rx.rssi) : undefined,
       });
     }
-    return { sender, target, text: String(data.message || ''), timestamp: data.timestamp ? String(data.timestamp) : undefined, routes };
+    return {
+      sender,
+      target,
+      text: String(data.message || ''),
+      channel: channel || undefined,
+      pubkeyPrefix: senderPrefix || undefined,
+      timestamp: data.timestamp ? String(data.timestamp) : undefined,
+      routes,
+    };
   }
 
   private _fitMessage() {
