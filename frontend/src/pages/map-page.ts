@@ -594,6 +594,136 @@ export class MapPage extends LitElement {
     return { className, label, title, style };
   }
 
+  private _eventBelongsToDevice(data: Record<string, unknown>): boolean {
+    const prefix = this.devicePrefix.trim().toLowerCase().replace(/[^0-9a-f]/g, '').substring(0, 6);
+    if (!prefix) return true;
+    const entityId = String(data.entity_id || '').toLowerCase();
+    return entityId.includes(`meshcore_${prefix}_`);
+  }
+
+  private _setupMessageSubscriptions() {
+    this._teardownMessageSubscriptions();
+    if (!this._messageSubscriptionsActive || !this.hass?.connection?.subscribeEvents) return;
+    const subscribe = async (eventType: string, handler: (data: Record<string, unknown>) => void) => {
+      try {
+        const unsubscribe = await this.hass!.connection.subscribeEvents(
+          (event: { data?: Record<string, unknown> }) => { if (event.data) handler(event.data); },
+          eventType,
+        );
+        if (!this._messageSubscriptionsActive) { unsubscribe(); return; }
+        this._messageUnsubscribers.push(unsubscribe);
+      } catch (_) { /* Older MeshCore versions may not expose this event. */ }
+    };
+    void subscribe('meshcore_message', data => {
+      if (!this._showMessage || !this._eventBelongsToDevice(data)) return;
+      this._messageMap = this._buildMessageMap(data);
+      this._fitMessage();
+    });
+    void subscribe('meshcore_delivery_update', data => {
+      if (!this._showMessage || !this._eventBelongsToDevice(data)) return;
+      const current = this._messageMap;
+      const text = String(data.message || '');
+      const sender = String(data.sender_name || '');
+      if (!current) {
+        if (!text) return;
+        this._messageMap = this._buildMessageMap(data);
+        this._fitMessage();
+        return;
+      }
+      if (text && current.text !== text) return;
+      if (sender && current.sender !== sender) return;
+      this._messageMap = this._buildMessageMap(data);
+      this._fitMessage();
+    });
+  }
+
+  private _teardownMessageSubscriptions() {
+    this._messageUnsubscribers.forEach(unsubscribe => { try { unsubscribe(); } catch (_) {} });
+    this._messageUnsubscribers = [];
+  }
+
+  private _findContactByHash(hash: string): Contact | undefined {
+    const normalized = hash.toLowerCase();
+    const matches = this.contacts.filter(contact => {
+      const key = String(contact.public_key || '').toLowerCase();
+      const prefix = String(contact.pubkey_prefix || '').toLowerCase();
+      return key.startsWith(normalized) || prefix.startsWith(normalized);
+    });
+    if (!matches.length) return undefined;
+    if (matches.length === 1) return matches[0];
+    const located = matches.filter(hasCoordinates);
+    if (located.length === 1) return located[0];
+    return [...matches].sort((a, b) => (Number(b.last_advert) || 0) - (Number(a.last_advert) || 0))[0];
+  }
+
+  private _pathHashes(rx: Record<string, unknown>): string[] {
+    const pathNodes = Array.isArray(rx.path_nodes) ? rx.path_nodes : null;
+    if (pathNodes) return pathNodes.map(node => typeof node === 'object' && node !== null ? String((node as Record<string, unknown>).hash || '') : String(node)).filter(Boolean).map(v => v.toLowerCase());
+    const path = String(rx.path || '').replace(/[^0-9a-f]/gi, '').toLowerCase();
+    if (!path) return [];
+    const hashSize = Math.max(1, Number(rx.path_hash_size) || 1);
+    const width = hashSize * 2;
+    const hashes: string[] = [];
+    for (let i = 0; i + width <= path.length; i += width) hashes.push(path.slice(i, i + width));
+    return hashes;
+  }
+
+  private _buildMessageMap(data: Record<string, unknown>): MessageMapState {
+    const sender = String(data.sender_name || 'Unknown node');
+    const channel = String(data.channel || '');
+    const target = channel ? `#${channel}` : sender;
+    const senderPrefix = String(data.pubkey_prefix || '').toLowerCase();
+    const senderContact = senderPrefix ? this._findContactByHash(senderPrefix) : undefined;
+    const senderPoint: MessageMapPoint | undefined = senderContact && hasCoordinates(senderContact) ? {
+      key: senderContact.public_key, name: this._name(senderContact), lat: senderContact.adv_lat, lon: senderContact.adv_lon,
+    } : undefined;
+    const rxLogs = Array.isArray(data.rx_log_data) ? data.rx_log_data as Array<Record<string, unknown>> : [];
+    const sourceLogs = rxLogs.length ? rxLogs : [{}];
+    const routes: MessageMapRoute[] = [];
+    for (const rx of sourceLogs) {
+      const points: MessageMapPoint[] = [];
+      if (senderPoint) points.push(senderPoint);
+      const hashPath = this._pathHashes(rx);
+      for (const hash of hashPath) {
+        const contact = this._findContactByHash(hash);
+        if (!contact || !hasCoordinates(contact)) continue;
+        const point: MessageMapPoint = { key: contact.public_key, name: this._name(contact), lat: contact.adv_lat, lon: contact.adv_lon };
+        if (!points.some(existing => existing.key === point.key)) points.push(point);
+      }
+      if (points.length) routes.push({
+        points, hashPath,
+        snr: Number.isFinite(Number(rx.snr)) ? Number(rx.snr) : undefined,
+        rssi: Number.isFinite(Number(rx.rssi)) ? Number(rx.rssi) : undefined,
+      });
+    }
+    return { sender, target, text: String(data.message || ''), timestamp: data.timestamp ? String(data.timestamp) : undefined, routes };
+  }
+
+  private _fitMessage() {
+    if (!this._showMessage || !this._messageMap) return;
+    const points = this._messageMap.routes.flatMap(route => route.points);
+    if (!points.length) { this._center = DEFAULT_CENTER; this._zoom = 5; return; }
+    const minLat = Math.min(...points.map(point => point.lat));
+    const maxLat = Math.max(...points.map(point => point.lat));
+    const minLon = Math.min(...points.map(point => point.lon));
+    const maxLon = Math.max(...points.map(point => point.lon));
+    this._center = [(minLat + maxLat) / 2, (minLon + maxLon) / 2];
+    if (points.length === 1) { this._zoom = 12; return; }
+    const width = Math.max(this._mapSize.width - 120, 320);
+    const height = Math.max(this._mapSize.height - 120, 240);
+    let zoom = MAX_ZOOM;
+    for (let z = MIN_ZOOM; z <= MAX_ZOOM; z++) {
+      const [x1, y1] = project(minLat, minLon, z); const [x2, y2] = project(maxLat, maxLon, z);
+      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { zoom = z; break; }
+    }
+    this._zoom = Math.max(MIN_ZOOM, zoom - 1);
+  }
+
+  private _messageBubblePoint(): { left: number; top: number } {
+    const point = this._messageMap?.routes[0]?.points[0];
+    if (point) return this._mapPoint(point.lat, point.lon);
+    return { left: Math.max(20, this._mapSize.width / 2 - 90), top: Math.max(80, this._mapSize.height / 2) };
+  }
   private _fitAll() {
     const nodes = this._nodes;
     if (!nodes.length) {
