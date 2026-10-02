@@ -351,10 +351,17 @@ export class MapPage extends LitElement {
       overflow: visible;
     }
     .message-route-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: visible; }
-    .message-route { fill: none; stroke: rgba(3,169,244,.9); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 1px 2px rgba(0,0,0,.35)); }
-    .message-route.secondary { stroke: rgba(255,152,0,.72); stroke-width: 2.5; }
-    .message-hop { fill: var(--card-background-color,#fff); stroke: var(--primary-color,#03a9f4); stroke-width: 2; }
-    .message-hop-label { font-size: 10px; font-weight: 600; fill: var(--primary-text-color,#222); paint-order: stroke; stroke: rgba(255,255,255,.85); stroke-width: 3px; stroke-linejoin: round; }
+    .message-route { fill: none; stroke: rgba(3,169,244,.92); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 10 9; filter: drop-shadow(0 0 3px rgba(3,169,244,.55)); animation: message-route-flow 900ms linear infinite; }
+    .message-route.secondary { stroke: rgba(255,152,0,.78); stroke-width: 3.5; filter: drop-shadow(0 0 3px rgba(255,152,0,.48)); animation-duration: 1050ms; }
+    .message-route-glow { fill: none; stroke: rgba(255,255,255,.28); stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; filter: blur(3px); animation: message-route-pulse 1.5s ease-in-out infinite; }
+    @keyframes message-route-flow { to { stroke-dashoffset: -38px; } }
+    @keyframes message-route-pulse { 0%, 100% { opacity: .35; } 50% { opacity: .9; } }
+    .message-node { fill: var(--card-background-color,#fff); stroke: var(--primary-color,#03a9f4); stroke-width: 3; filter: drop-shadow(0 0 4px rgba(3,169,244,.75)); }
+    .message-node.sender { fill: rgba(3,169,244,.95); stroke: #fff; stroke-width: 2.5; }
+    .message-node-core { fill: var(--primary-color,#03a9f4); animation: message-node-pulse 1.4s ease-in-out infinite; }
+    .message-node-core.sender { fill: #fff; }
+    @keyframes message-node-pulse { 0%, 100% { r: 4; opacity: .75; } 50% { r: 7; opacity: 1; } }
+    .message-hop-label { font-size: 10px; font-weight: 700; fill: var(--primary-text-color,#222); paint-order: stroke; stroke: rgba(255,255,255,.92); stroke-width: 3px; stroke-linejoin: round; }
     .message-bubble { position: absolute; z-index: 5; max-width: min(360px,calc(100% - 32px)); min-width: 180px; padding: 10px 12px; border: 1px solid rgba(3,169,244,.45); border-radius: 12px; background: rgba(255,255,255,.94); color: #222; box-shadow: 0 4px 16px rgba(0,0,0,.28); transform: translate(14px,calc(-100% - 14px)); pointer-events: none; overflow: hidden; }
     .message-bubble::after { content: ''; position: absolute; left: 10px; bottom: -7px; width: 14px; height: 14px; background: rgba(255,255,255,.94); border-right: 1px solid rgba(3,169,244,.45); border-bottom: 1px solid rgba(3,169,244,.45); transform: rotate(45deg); }
     .message-bubble-title { position: relative; z-index: 1; font-size: 12px; font-weight: 700; color: var(--primary-color,#03a9f4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1145,21 +1152,40 @@ export class MapPage extends LitElement {
             ${this._showMessage
               ? html`
                   <svg class="message-route-layer" aria-hidden="true">
-                    ${this._messageMap?.routes.map((route, index) => {
-                      if (route.points.length < 2) return nothing;
-                      const points = route.points.map(point => {
-                        const screen = this._mapPoint(point.lat, point.lon);
-                        return `${screen.left},${screen.top}`;
-                      }).join(" ");
+                    ${(() => {
+                      const routes = this._messageMap?.routes || [];
+                      const nodeMap = new Map<string, { point: MessageMapPoint; hop: number; sender: boolean }>();
+                      routes.forEach(route => {
+                        route.points.forEach((point, pointIndex) => {
+                          const existing = nodeMap.get(point.key);
+                          const sender = pointIndex === 0;
+                          if (!existing || pointIndex < existing.hop) {
+                            nodeMap.set(point.key, { point, hop: pointIndex, sender });
+                          }
+                        });
+                      });
                       return html`
-                        <polyline class="message-route ${index ? "secondary" : ""}" points=${points}></polyline>
-                        ${route.points.slice(1).map((point, hopIndex) => {
-                          const screen = this._mapPoint(point.lat, point.lon);
+                        ${routes.map((route, index) => {
+                          if (route.points.length < 2) return nothing;
+                          const points = route.points.map(point => {
+                            const screen = this._mapPoint(point.lat, point.lon);
+                            return `${screen.left},${screen.top}`;
+                          }).join(" ");
                           return html`
-                            <circle class="message-hop" cx=${screen.left} cy=${screen.top} r="5"></circle>
-                            <text class="message-hop-label" x=${screen.left + 8} y=${screen.top - 7}>${hopIndex + 1}. ${point.name}</text>
+                            <polyline class="message-route-glow" points=${points}></polyline>
+                            <polyline class="message-route ${index ? "secondary" : ""}" points=${points}></polyline>
                           `;
                         })}
+                        ${[...nodeMap.values()].map(({ point, hop, sender }) => {
+                          const screen = this._mapPoint(point.lat, point.lon);
+                          return html`
+                            <circle class="message-node ${sender ? "sender" : ""}" cx=${screen.left} cy=${screen.top} r=${sender ? 10 : 8}></circle>
+                            <circle class="message-node-core ${sender ? "sender" : ""}" cx=${screen.left} cy=${screen.top} r="4"></circle>
+                            <text class="message-hop-label" x=${screen.left + 11} y=${screen.top - 9}>${sender ? "Sender" : `${hop}. ${point.name}`}</text>
+                          `;
+                        })}
+                      `;
+                    })()}
                       `;
                     })}
                   </svg>
