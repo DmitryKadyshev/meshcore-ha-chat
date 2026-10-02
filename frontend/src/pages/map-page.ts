@@ -601,11 +601,10 @@ export class MapPage extends LitElement {
   }
 
   private _activity(contact: Contact): { className: string; label: string; title: string; style?: string } {
-    // lastmod is the local MeshCore contact-store timestamp and is a
-    // better indicator of when this node was actually heard by our radio.
-    // last_advert is the remote node's advertised timestamp and may be
-    // stale or affected by the remote RTC.
-    const timestamp = Number(contact.lastmod) || Number(contact.last_advert);
+    // Keep the map activity indicator consistent with Nodes → Last Heard.
+    // The Nodes page displays Contact.last_advert, so the map must use the
+    // same timestamp rather than the local contact-store lastmod value.
+    const timestamp = Number(contact.last_advert);
     if (!Number.isFinite(timestamp) || timestamp <= 0) {
       return { className: 'gray', label: '—', title: 'No activity timestamp' };
     }
@@ -639,8 +638,8 @@ export class MapPage extends LitElement {
     else label = `${Math.floor(ageMinutes / (24 * 60))}d`;
 
     const title = label === '<1m'
-      ? 'Active less than 1 minute ago'
-      : `Last advert: ${label} ago`;
+      ? 'Last heard less than 1 minute ago'
+      : `Last heard: ${label} ago`;
 
     return { className, label, title, style };
   }
@@ -1112,8 +1111,8 @@ export class MapPage extends LitElement {
   render() {
     const allContacts = [...this.contacts].sort((a, b) => {
       if (this._deviceSort === 'activity') {
-        const activityA = Number(a.lastmod) || Number(a.last_advert) || 0;
-        const activityB = Number(b.lastmod) || Number(b.last_advert) || 0;
+        const activityA = Number(a.last_advert) || 0;
+        const activityB = Number(b.last_advert) || 0;
         if (activityA !== activityB) return activityB - activityA;
       }
       return this._name(a).localeCompare(this._name(b), undefined, { sensitivity: 'base' });
