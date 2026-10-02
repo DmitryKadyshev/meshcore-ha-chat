@@ -766,6 +766,7 @@ export class MapPage extends LitElement {
               ${this._nodes.map(node => {
                 const point = this._mapPoint(node.lat, node.lon);
                 const selected = this._selectedKey === node.contact.public_key;
+                const activity = this._activity(node.contact);
                 return html`
                   <button
                     class="marker activity-marker ${activity.className} ${selected ? 'selected' : ''}"
