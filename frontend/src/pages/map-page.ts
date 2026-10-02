@@ -702,8 +702,34 @@ export class MapPage extends LitElement {
 
   private _onWheel(event: WheelEvent) {
     event.preventDefault();
+
     const direction = event.deltaY > 0 ? -1 : 1;
+    const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._zoom + direction));
+    if (nextZoom === this._zoom || !this._mapSize.width || !this._mapSize.height) {
+      return;
+    }
+
+    const rect = this._mapEl?.getBoundingClientRect();
+    if (!rect) {
+      this._zoomBy(direction);
+      return;
+    }
+
+    // Keep the geographic point currently under the mouse cursor fixed
+    // at the same screen position while changing zoom.
+    const cursorX = event.clientX - rect.left;
+    const cursorY = event.clientY - rect.top;
+    const [centerX, centerY] = project(this._center[0], this._center[1], this._zoom);
+    const worldX = centerX + cursorX - this._mapSize.width / 2;
+    const worldY = centerY + cursorY - this._mapSize.height / 2;
+    const [lat, lon] = unproject(worldX, worldY, this._zoom);
+
     this._zoomBy(direction);
+
+    const [zoomedX, zoomedY] = project(lat, lon, nextZoom);
+    const nextCenterX = zoomedX - cursorX + this._mapSize.width / 2;
+    const nextCenterY = zoomedY - cursorY + this._mapSize.height / 2;
+    this._center = unproject(nextCenterX, nextCenterY, nextZoom);
   }
 
   render() {
