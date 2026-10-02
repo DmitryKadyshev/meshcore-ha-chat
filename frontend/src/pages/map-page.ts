@@ -364,6 +364,8 @@ export class MapPage extends LitElement {
     .message-route { fill: none; stroke: rgba(3,169,244,.92); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 10 9; filter: drop-shadow(0 0 3px rgba(3,169,244,.55)); animation: message-route-flow 900ms linear infinite; }
     .message-route.secondary { stroke: rgba(255,152,0,.78); stroke-width: 3.5; filter: drop-shadow(0 0 3px rgba(255,152,0,.48)); animation-duration: 1050ms; }
     .message-route-glow { fill: none; stroke: rgba(255,255,255,.28); stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; filter: blur(3px); animation: message-route-pulse 1.5s ease-in-out infinite; }
+    .message-route-packet { fill: #fff; stroke: rgba(3,169,244,.95); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(3,169,244,.95)); }
+    .message-route-packet.secondary { fill: #fff; stroke: rgba(255,152,0,.95); filter: drop-shadow(0 0 5px rgba(255,152,0,.9)); }
     @keyframes message-route-flow { to { stroke-dashoffset: -38px; } }
     @keyframes message-route-pulse { 0%, 100% { opacity: .35; } 50% { opacity: .9; } }
     .message-node { fill: var(--card-background-color,#fff); stroke: var(--primary-color,#03a9f4); stroke-width: 3; filter: drop-shadow(0 0 4px rgba(3,169,244,.75)); }
@@ -1249,9 +1251,15 @@ export class MapPage extends LitElement {
                             const screen = this._mapPoint(point.lat, point.lon);
                             return `${screen.left},${screen.top}`;
                           }).join(" ");
+                          const routeId = `message-route-${index}`;
                           return html`
                             <polyline class="message-route-glow" points=${points}></polyline>
-                            <polyline class="message-route ${index ? "secondary" : ""}" points=${points}></polyline>
+                            <polyline id=${routeId} class="message-route ${index ? "secondary" : ""}" points=${points}></polyline>
+                            <circle class="message-route-packet ${index ? "secondary" : ""}" r="5">
+                              <animateMotion dur=${index ? "1.4s" : "1.1s"} repeatCount="indefinite" rotate="auto">
+                                <mpath href=${`#${routeId}`}></mpath>
+                              </animateMotion>
+                            </circle>
                           `;
                         })}
                         ${[...nodeMap.values()].map(({ point, hop, sender }) => {
