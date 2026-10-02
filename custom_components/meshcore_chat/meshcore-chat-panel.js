@@ -5522,6 +5522,10 @@ let e,t,i,o,r,a,s,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,S,C,M,z,A,D,R,O,I,T,F,E,N,
             <div class="marker-layer">
               ${0}
             </div>
+
+            <div class="label-layer">
+              ${0}
+            </div>
           </div>
 
         <div
@@ -5564,7 +5568,7 @@ let e,t,i,o,r,a,s,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,S,C,M,z,A,D,R,O,I,T,F,E,N,
                   <img class="tile" src=${0} alt="" style="left:${0}px;top:${0}px;">
                 `),e.src,e.left,e.top))):Bn,this._tileIndices().map(e=>Pn(Ko||(Ko=js`
                 <img class="tile" src=${0} alt="" style="left:${0}px;top:${0}px;">
-              `),e.src,e.left,e.top)),(()=>{const e=this._nodes,t=this._visibleLabelKeys(e),i=this._labelScale();return e.map(e=>{const o=this._mapPoint(e.lat,e.lon),r=this._selectedKey===e.contact.public_key,a=this._activity(e.contact),s=t.has(e.contact.public_key);return Pn(Vo||(Vo=js`
+              `),e.src,e.left,e.top)),(()=>this._nodes.map(e=>{const t=this._mapPoint(e.lat,e.lon),i=this._selectedKey===e.contact.public_key,o=this._activity(e.contact);return Pn(Vo||(Vo=js`
                     <button
                       class="marker activity-marker ${0} ${0}"
                       title=${0}
@@ -5573,9 +5577,14 @@ let e,t,i,o,r,a,s,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,S,C,M,z,A,D,R,O,I,T,F,E,N,
                       @pointerdown=${0}
                       @click=${0}>
                       <span>${0}</span>
-                      ${0}
                     </button>
-                  `),a.className,r?"selected":"",a.title,this._name(e.contact),a.title,o.left,o.top,a.style||"",e=>e.stopPropagation(),t=>{t.stopPropagation(),this._focus(e.contact)},a.label,s?Pn(Uo||(Uo=js`<span class="node-label" style="--label-scale:${0}">${0}</span>`),i,this._name(e.contact)):Bn)})})(),e=>e.stopPropagation(),e=>e.stopPropagation(),()=>this._zoomBy(1),()=>this._zoomBy(-1),()=>{this._selectedKey=null,this._fitAll()},this._nodes.length?Bn:Pn(jo||(jo=js`<div class="empty-map">No devices with coordinates are available.</div>`)))}};Cd.styles=Zs(Wo||(Wo=js`
+                  `),o.className,i?"selected":"",o.title,this._name(e.contact),o.title,t.left,t.top,o.style||"",e=>e.stopPropagation(),t=>{t.stopPropagation(),this._focus(e.contact)},o.label)}))(),(()=>{const e=this._nodes,t=this._visibleLabelKeys(e),i=this._labelScale();return e.map(e=>{if(!t.has(e.contact.public_key))return Bn;const o=this._mapPoint(e.lat,e.lon);return Pn(Uo||(Uo=js`
+                    <span
+                      class="node-label"
+                      style="left:${0}px;top:${0}px;--label-scale:${0}">
+                      ${0}
+                    </span>
+                  `),o.left,o.top,i,this._name(e.contact))})})(),e=>e.stopPropagation(),e=>e.stopPropagation(),()=>this._zoomBy(1),()=>this._zoomBy(-1),()=>{this._selectedKey=null,this._fitAll()},this._nodes.length?Bn:Pn(jo||(jo=js`<div class="empty-map">No devices with coordinates are available.</div>`)))}};Cd.styles=Zs(Wo||(Wo=js`
     :host {
       display: flex;
       width: 100%;
@@ -5807,8 +5816,16 @@ let e,t,i,o,r,a,s,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,S,C,M,z,A,D,R,O,I,T,F,E,N,
     .marker-layer {
       position: absolute;
       inset: 0;
-      z-index: 2;
+      z-index: 3;
       pointer-events: none;
+    }
+
+    .label-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      pointer-events: none;
+      overflow: visible;
     }
 
     .marker {
@@ -5862,8 +5879,6 @@ let e,t,i,o,r,a,s,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,S,C,M,z,A,D,R,O,I,T,F,E,N,
 
     .node-label {
       position: absolute;
-      left: 50%;
-      top: 50%;
       transform: translate(10px, -50%) scale(var(--label-scale, 1));
       transform-origin: left center;
       max-width: 180px;
