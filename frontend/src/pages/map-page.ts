@@ -309,8 +309,8 @@ export class MapPage extends LitElement {
     }
 
     .activity-marker {
-      width: 34px;
-      height: 34px;
+      width: 38px;
+      height: 38px;
       border-radius: 50%;
       border: 2px solid #fff;
       background: hsl(var(--activity-hue, 0) var(--activity-sat, 65%) var(--activity-light, 46%));
@@ -319,14 +319,50 @@ export class MapPage extends LitElement {
       align-items: center;
       justify-content: center;
       color: #fff;
-      font-size: 8px;
+      font-size: 7px;
       font-weight: 700;
       line-height: 1;
       font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+      letter-spacing: -.2px;
       text-shadow: 0 1px 2px rgba(0, 0, 0, .45);
       box-shadow: 0 1px 5px rgba(0, 0, 0, .35);
       padding: 0;
       box-sizing: border-box;
+    }
+
+    .activity-marker > span {
+      display: block;
+      white-space: nowrap;
+      overflow: hidden;
+      max-width: 100%;
+    }
+
+    .activity-marker.selected {
+      width: 44px;
+      height: 44px;
+    }
+
+    .node-label {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(10px, -50%) scale(var(--label-scale, 1));
+      transform-origin: left center;
+      max-width: 180px;
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: rgba(255, 255, 255, .88);
+      color: #222;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, .22);
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.2;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      pointer-events: none;
+      user-select: none;
     }
 
     .activity-marker.green { --activity-hue: 142; }
@@ -336,12 +372,6 @@ export class MapPage extends LitElement {
       --activity-hue: 0;
       --activity-sat: 0%;
       --activity-light: 52%;
-    }
-
-    .activity-marker.selected {
-      width: 40px;
-      height: 40px;
-      z-index: 2;
     }
 
     .marker::after {
@@ -588,6 +618,52 @@ export class MapPage extends LitElement {
     this._preloadTiles(this._tileIndices());
   }
 
+  private _labelScale(): number {
+    return Math.max(0.55, Math.min(1.35, 2 ** (this._zoom - 12)));
+  }
+
+  private _visibleLabelKeys(nodes: MapNode[]): Set<string> {
+    const visible = new Set<string>();
+    if (this._zoom < 9 || !this._mapSize.width || !this._mapSize.height) {
+      return visible;
+    }
+
+    const scale = this._labelScale();
+    const occupied: Array<{ left: number; top: number; right: number; bottom: number }> = [];
+    const ordered = [...nodes].sort((a, b) => {
+      const aSelected = this._selectedKey === a.contact.public_key ? 1 : 0;
+      const bSelected = this._selectedKey === b.contact.public_key ? 1 : 0;
+      if (aSelected !== bSelected) return bSelected - aSelected;
+      return (Number(b.contact.last_advert) || 0) - (Number(a.contact.last_advert) || 0);
+    });
+
+    for (const node of ordered) {
+      const point = this._mapPoint(node.lat, node.lon);
+      const name = this._name(node.contact);
+      const width = Math.min(180, Math.max(42, name.length * 6.6 + 12)) * scale;
+      const height = 18 * scale;
+      const left = point.left + 10 * scale;
+      const top = point.top - height / 2;
+      const box = { left, top, right: left + width, bottom: top + height };
+
+      if (box.right < 0 || box.left > this._mapSize.width || box.bottom < 0 || box.top > this._mapSize.height) continue;
+
+      const overlaps = occupied.some(other =>
+        box.left < other.right &&
+        box.right > other.left &&
+        box.top < other.bottom &&
+        box.bottom > other.top,
+      );
+
+      if (!overlaps) {
+        visible.add(node.contact.public_key);
+        occupied.push(box);
+      }
+    }
+
+    return visible;
+  }
+
   private _mapPoint(lat: number, lon: number): { left: number; top: number } {
     const [cx, cy] = project(this._center[0], this._center[1], this._zoom);
     const [x, y] = project(lat, lon, this._zoom);
@@ -828,22 +904,29 @@ export class MapPage extends LitElement {
             </div>
 
             <div class="marker-layer">
-              ${this._nodes.map(node => {
-                const point = this._mapPoint(node.lat, node.lon);
-                const selected = this._selectedKey === node.contact.public_key;
-                const activity = this._activity(node.contact);
-                return html`
-                  <button
-                    class="marker activity-marker ${activity.className} ${selected ? 'selected' : ''}"
-                    title=${activity.title}
-                    aria-label=${this._name(node.contact)} — ${activity.title}
-                    style="left:${point.left}px;top:${point.top}px;${activity.style || ''}"
-                    @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
-                    @click=${(e: Event) => { e.stopPropagation(); this._focus(node.contact); }}>
-                    <span>${activity.label}</span>
-                  </button>
-                `;
-              })}
+              ${(() => {
+                const nodes = this._nodes;
+                const visibleLabels = this._visibleLabelKeys(nodes);
+                const labelScale = this._labelScale();
+                return nodes.map(node => {
+                  const point = this._mapPoint(node.lat, node.lon);
+                  const selected = this._selectedKey === node.contact.public_key;
+                  const activity = this._activity(node.contact);
+                  const showLabel = visibleLabels.has(node.contact.public_key);
+                  return html`
+                    <button
+                      class="marker activity-marker ${activity.className} ${selected ? 'selected' : ''}"
+                      title=${activity.title}
+                      aria-label=${this._name(node.contact)} — ${activity.title}
+                      style="left:${point.left}px;top:${point.top}px;${activity.style || ''}"
+                      @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                      @click=${(e: Event) => { e.stopPropagation(); this._focus(node.contact); }}>
+                      <span>${activity.label}</span>
+                      ${showLabel ? html`<span class="node-label" style="--label-scale:${labelScale}">${this._name(node.contact)}</span>` : nothing}
+                    </button>
+                  `;
+                });
+              })()}
             </div>
           </div>
 
