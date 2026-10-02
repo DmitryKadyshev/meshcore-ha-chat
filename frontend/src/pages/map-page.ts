@@ -180,10 +180,28 @@ export class MapPage extends LitElement {
       cursor: grabbing;
     }
 
+    .map-content {
+      position: absolute;
+      inset: 0;
+      will-change: transform;
+    }
+
     .tiles {
       position: absolute;
       inset: 0;
       overflow: hidden;
+      transform-origin: 50% 50%;
+      will-change: transform;
+    }
+
+    .tiles.transition {
+      z-index: 0;
+      pointer-events: none;
+    }
+
+    .tiles.current {
+      z-index: 1;
+      pointer-events: none;
     }
 
     .tile {
@@ -193,6 +211,7 @@ export class MapPage extends LitElement {
       max-width: none;
       pointer-events: none;
       image-rendering: auto;
+      user-select: none;
     }
 
     .marker-layer {
@@ -205,7 +224,6 @@ export class MapPage extends LitElement {
       position: absolute;
       width: 18px;
       height: 18px;
-      transform: translate(-50%, -50%);
       border: 2px solid #fff;
       border-radius: 50% 50% 50% 0;
       background: var(--primary-color, #03a9f4);
@@ -307,6 +325,14 @@ export class MapPage extends LitElement {
   disconnectedCallback() {
     this._resizeObserver?.disconnect();
     this._removePointerListeners();
+    if (this._tileTransitionTimer !== undefined) {
+      window.clearTimeout(this._tileTransitionTimer);
+      this._tileTransitionTimer = undefined;
+    }
+    if (this._panAnimationFrame !== undefined) {
+      window.cancelAnimationFrame(this._panAnimationFrame);
+      this._panAnimationFrame = undefined;
+    }
     super.disconnectedCallback();
   }
 
@@ -319,6 +345,7 @@ export class MapPage extends LitElement {
   }
 
   protected updated(changed: Map<string, unknown>) {
+    this._applyPanTransform();
     if (changed.has('contacts')) {
       const hadSelected = this._selectedKey && this.contacts.some(
         c => c.public_key === this._selectedKey && hasCoordinates(c),
@@ -382,7 +409,20 @@ export class MapPage extends LitElement {
 
   private _zoomBy(delta: number) {
     const next = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, this._zoom + delta));
-    if (next !== this._zoom) this._zoom = next;
+    if (next === this._zoom) return;
+
+    const previousTiles = this._tileIndices();
+    this._tileTransition = { tiles: previousTiles, scale: 2 ** (next - this._zoom) };
+    this._zoom = next;
+
+    if (this._tileTransitionTimer !== undefined) {
+      window.clearTimeout(this._tileTransitionTimer);
+    }
+    this._tileTransitionTimer = window.setTimeout(() => {
+      this._tileTransition = undefined;
+      this._tileTransitionTimer = undefined;
+      this.requestUpdate();
+    }, 260);
   }
 
   private _mapPoint(lat: number, lon: number): { left: number; top: number } {
@@ -433,20 +473,44 @@ export class MapPage extends LitElement {
 
   private _drag(event: PointerEvent) {
     if (!this._dragging) return;
-    const dx = event.clientX - this._dragStart.x;
-    const dy = event.clientY - this._dragStart.y;
-    const [lat, lon] = unproject(
-      this._dragCenterPx.x - dx,
-      this._dragCenterPx.y - dy,
-      this._zoom,
-    );
-    this._center = [lat, lon];
+    this._panVisual = {
+      x: event.clientX - this._dragStart.x,
+      y: event.clientY - this._dragStart.y,
+    };
+    this._schedulePanTransform();
+  }
+
+  private _schedulePanTransform() {
+    if (this._panAnimationFrame !== undefined) return;
+    this._panAnimationFrame = window.requestAnimationFrame(() => {
+      this._panAnimationFrame = undefined;
+      this._applyPanTransform();
+    });
+  }
+
+  private _applyPanTransform() {
+    const content = this.shadowRoot?.querySelector('.map-content') as HTMLElement | null;
+    if (!content) return;
+    content.style.transform = `translate3d(${this._panVisual.x}px, ${this._panVisual.y}px, 0)`;
   }
 
   private _endDrag() {
     if (!this._dragging) return;
     this._dragging = false;
     this._mapEl?.classList.remove('dragging');
+
+    const { x, y } = this._panVisual;
+    if (x !== 0 || y !== 0) {
+      const [lat, lon] = unproject(
+        this._dragCenterPx.x - x,
+        this._dragCenterPx.y - y,
+        this._zoom,
+      );
+      this._center = [lat, lon];
+      this._panVisual = { x: 0, y: 0 };
+      this._applyPanTransform();
+    }
+
     this._removePointerListeners();
   }
 
@@ -515,14 +579,26 @@ export class MapPage extends LitElement {
           @pointerdown=${this._startDrag}
           @wheel=${this._onWheel}
           @dblclick=${(e: MouseEvent) => { e.preventDefault(); this._zoomBy(1); }}>
-          <div class="tiles">
-            ${this._tileIndices().map(tile => html`
-              <img class="tile" src=${tile.src} alt="" style="left:${tile.left}px;top:${tile.top}px;">
-            `)}
-          </div>
+          <div class="map-content">
+            ${this._tileTransition ? html`
+              <div
+                class="tiles transition"
+                style="transform:scale(${this._tileTransition.scale});">
+                ${this._tileTransition.tiles.map(tile => html`
+                  <img class="tile" src=${tile.src} alt="" style="left:${tile.left}px;top:${tile.top}px;">
+                `)}
+              </div>
+            ` : nothing}
 
-          <div class="marker-layer">
-            ${this._nodes.map(node => {
+            <div class="tiles current">
+              ${this._tileIndices().map(tile => html`
+                <img class="tile" src=${tile.src} alt="" style="left:${tile.left}px;top:${tile.top}px;">
+              `)}
+            </div>
+
+            <div class="marker-layer">
+              ${this._nodes.map(node => {
+${this._nodes.map(node => {
               const point = this._mapPoint(node.lat, node.lon);
               const selected = this._selectedKey === node.contact.public_key;
               return html`
@@ -538,7 +614,11 @@ export class MapPage extends LitElement {
             })}
           </div>
 
-          <div
+  
+            </div>
+          </div>
+
+        <div
             class="controls"
             @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
             @dblclick=${(e: MouseEvent) => e.stopPropagation()}>
