@@ -65,6 +65,7 @@ export class MapPage extends LitElement {
   private _dragging = false;
   private _dragStart = { x: 0, y: 0 };
   private _dragCenterPx = { x: 0, y: 0 };
+  private _panVisual = { x: 0, y: 0 };
   private _wheelZoomTimer?: number;
   private _pendingZoomDelta = 0;
   private _activityTimer?: number;
@@ -1227,6 +1228,7 @@ export class MapPage extends LitElement {
                     aria-hidden="true"
                     width="100%"
                     height="100%"
+                    viewBox=${`0 0 ${Math.max(1, this._mapSize.width)} ${Math.max(1, this._mapSize.height)}`}
                     preserveAspectRatio="none"
                   >
                     ${(() => {
