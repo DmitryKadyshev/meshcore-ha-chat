@@ -290,8 +290,16 @@ export class MapPage extends LitElement {
     .marker-layer {
       position: absolute;
       inset: 0;
-      z-index: 2;
+      z-index: 3;
       pointer-events: none;
+    }
+
+    .label-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 4;
+      pointer-events: none;
+      overflow: visible;
     }
 
     .marker {
@@ -345,8 +353,6 @@ export class MapPage extends LitElement {
 
     .node-label {
       position: absolute;
-      left: 50%;
-      top: 50%;
       transform: translate(10px, -50%) scale(var(--label-scale, 1));
       transform-origin: left center;
       max-width: 180px;
@@ -910,13 +916,10 @@ export class MapPage extends LitElement {
             <div class="marker-layer">
               ${(() => {
                 const nodes = this._nodes;
-                const visibleLabels = this._visibleLabelKeys(nodes);
-                const labelScale = this._labelScale();
                 return nodes.map(node => {
                   const point = this._mapPoint(node.lat, node.lon);
                   const selected = this._selectedKey === node.contact.public_key;
                   const activity = this._activity(node.contact);
-                  const showLabel = visibleLabels.has(node.contact.public_key);
                   return html`
                     <button
                       class="marker activity-marker ${activity.className} ${selected ? 'selected' : ''}"
@@ -926,8 +929,26 @@ export class MapPage extends LitElement {
                       @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
                       @click=${(e: Event) => { e.stopPropagation(); this._focus(node.contact); }}>
                       <span>${activity.label}</span>
-                      ${showLabel ? html`<span class="node-label" style="--label-scale:${labelScale}">${this._name(node.contact)}</span>` : nothing}
                     </button>
+                  `;
+                });
+              })()}
+            </div>
+
+            <div class="label-layer">
+              ${(() => {
+                const nodes = this._nodes;
+                const visibleLabels = this._visibleLabelKeys(nodes);
+                const labelScale = this._labelScale();
+                return nodes.map(node => {
+                  if (!visibleLabels.has(node.contact.public_key)) return nothing;
+                  const point = this._mapPoint(node.lat, node.lon);
+                  return html`
+                    <span
+                      class="node-label"
+                      style="left:${point.left}px;top:${point.top}px;--label-scale:${labelScale}">
+                      ${this._name(node.contact)}
+                    </span>
                   `;
                 });
               })()}
