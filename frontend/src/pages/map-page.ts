@@ -49,13 +49,13 @@ export class MapPage extends LitElement {
   @state() private _center: [number, number] = DEFAULT_CENTER;
   @state() private _zoom = 5;
   @state() private _mapSize = { width: 0, height: 0 };
-  @state() private _deviceSearch = '';
+  @state() private _deviceSearch = '';\n  @state() private _activityNow = Date.now();
 
   private _mapEl?: HTMLElement;
   private _resizeObserver?: ResizeObserver;
   private _dragging = false;
   private _dragStart = { x: 0, y: 0 };
-  private _dragCenterPx = { x: 0, y: 0 };\n  private _wheelZoomTimer?: number;\n  private _pendingZoomDelta = 0;
+  private _dragCenterPx = { x: 0, y: 0 };\n  private _wheelZoomTimer?: number;\n  private _pendingZoomDelta = 0;\n  private _activityTimer?: number;
 
   static styles = css`
     :host {
@@ -425,7 +425,7 @@ export class MapPage extends LitElement {
     }
 
     const advertMs = timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp;
-    const ageMs = Math.max(0, Date.now() - advertMs);
+    const ageMs = Math.max(0, this._activityNow - advertMs);
     const ageMinutes = Math.floor(ageMs / 60_000);
 
     let className: string;
