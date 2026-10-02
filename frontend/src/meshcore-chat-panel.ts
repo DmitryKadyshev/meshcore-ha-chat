@@ -866,7 +866,8 @@ export class MeshCorePanel extends LitElement {
             .hass=${this.hass}
             .config=${this._config}
             .contacts=${this._contacts}
-            .narrow=${this.narrow}></meshcore-map-page>`;
+            .narrow=${this.narrow}
+            .devicePrefix=${this._selectedDevice?.pubkey_prefix || ''}></meshcore-map-page>`;
       case 'devices':
         return html`
           <meshcore-devices-page
