@@ -54,7 +54,9 @@ export class MapPage extends LitElement {
   @state() private _center: [number, number] = DEFAULT_CENTER;
   @state() private _zoom = 5;
   @state() private _mapSize = { width: 0, height: 0 };
-  @state() private _deviceSearch = '';\n  @state() private _deviceSort: 'name' | 'activity' = 'name';\n  @state() private _activityNow = Date.now();
+  @state() private _deviceSearch = '';
+  @state() private _deviceSort: 'name' | 'activity' = 'name';
+  @state() private _activityNow = Date.now();
   @state() private _showMessage = false;
   @state() private _messageMap: MessageMapState | null = null;
 
@@ -62,7 +64,10 @@ export class MapPage extends LitElement {
   private _resizeObserver?: ResizeObserver;
   private _dragging = false;
   private _dragStart = { x: 0, y: 0 };
-  private _dragCenterPx = { x: 0, y: 0 };\n  private _wheelZoomTimer?: number;\n  private _pendingZoomDelta = 0;\n  private _activityTimer?: number;
+  private _dragCenterPx = { x: 0, y: 0 };
+  private _wheelZoomTimer?: number;
+  private _pendingZoomDelta = 0;
+  private _activityTimer?: number;
   private _messageUnsubscribers: Array<() => void> = [];
   private _messageSubscriptionsActive = false;
   private _tilePreloadCache = new Map<string, HTMLImageElement>();
@@ -175,7 +180,25 @@ export class MapPage extends LitElement {
       opacity: .55;
     }
 
-    .sort-select {\n      padding: 8px 10px;\n      border-bottom: 1px solid var(--divider-color, #e0e0e0);\n      flex-shrink: 0;\n    }\n\n    .sort-select select {\n      width: 100%;\n      box-sizing: border-box;\n      padding: 7px 9px;\n      border: 1px solid var(--divider-color, #ccc);\n      border-radius: 7px;\n      background: var(--primary-background-color, #fafafa);\n      color: var(--primary-text-color);\n      font: inherit;\n      font-size: 12px;\n    }\n\n    .message-toggle {
+    .sort-select {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--divider-color, #e0e0e0);
+      flex-shrink: 0;
+    }
+
+    .sort-select select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 9px;
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 7px;
+      background: var(--primary-background-color, #fafafa);
+      color: var(--primary-text-color);
+      font: inherit;
+      font-size: 12px;
+    }
+
+    .message-toggle {
       padding: 9px 10px;
       border-bottom: 1px solid var(--divider-color, #e0e0e0);
       flex-shrink: 0;
