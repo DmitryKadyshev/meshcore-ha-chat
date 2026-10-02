@@ -49,6 +49,7 @@ export class MapPage extends LitElement {
   @state() private _center: [number, number] = DEFAULT_CENTER;
   @state() private _zoom = 5;
   @state() private _mapSize = { width: 0, height: 0 };
+  @state() private _deviceSearch = '';
 
   private _mapEl?: HTMLElement;
   private _resizeObserver?: ResizeObserver;
@@ -99,6 +100,58 @@ export class MapPage extends LitElement {
       color: var(--secondary-text-color);
       font-size: 11px;
       font-weight: 400;
+    }
+
+    .device-search {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--divider-color, #e0e0e0);
+      flex-shrink: 0;
+    }
+
+    .device-search input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 7px;
+      background: var(--primary-background-color, #fafafa);
+      color: var(--primary-text-color);
+      font: inherit;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .device-search input:focus {
+      border-color: var(--primary-color, #03a9f4);
+      box-shadow: 0 0 0 1px var(--primary-color, #03a9f4);
+    }
+
+    .activity {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 8px;
+      font-weight: 700;
+      line-height: 1;
+      text-align: center;
+      box-sizing: border-box;
+      border: 1px solid rgba(255, 255, 255, .7);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .22);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .activity.green { background: #2eaa55; }
+    .activity.yellow { background: #e0a800; }
+    .activity.red { background: #d64545; }
+    .activity.gray { background: #858585; }
+
+    .node.no-location .activity {
+      opacity: .55;
     }
 
     .node-list {
@@ -365,6 +418,35 @@ export class MapPage extends LitElement {
     return contact.adv_name || contact.pubkey_prefix || 'Unknown node';
   }
 
+  private _activity(contact: Contact): { className: string; label: string; title: string } {
+    const timestamp = Number(contact.last_advert);
+    if (!Number.isFinite(timestamp) || timestamp <= 0) {
+      return { className: 'gray', label: '—', title: 'No activity timestamp' };
+    }
+
+    const advertMs = timestamp < 10_000_000_000 ? timestamp * 1000 : timestamp;
+    const ageMs = Math.max(0, Date.now() - advertMs);
+    const ageMinutes = Math.floor(ageMs / 60_000);
+
+    let className: string;
+    if (ageMs < 60 * 60_000) className = 'green';
+    else if (ageMs < 3 * 60 * 60_000) className = 'yellow';
+    else if (ageMs < 24 * 60 * 60_000) className = 'red';
+    else className = 'gray';
+
+    let label: string;
+    if (ageMinutes < 1) label = '<1m';
+    else if (ageMinutes < 60) label = `${ageMinutes}m`;
+    else if (ageMinutes < 24 * 60) label = `${Math.floor(ageMinutes / 60)}h`;
+    else label = `${Math.floor(ageMinutes / (24 * 60))}d`;
+
+    const title = label === '<1m'
+      ? 'Active less than 1 minute ago'
+      : `Last advert: ${label} ago`;
+
+    return { className, label, title };
+  }
+
   private _fitAll() {
     const nodes = this._nodes;
     if (!nodes.length) {
@@ -539,6 +621,13 @@ export class MapPage extends LitElement {
     const allContacts = [...this.contacts].sort((a, b) =>
       this._name(a).localeCompare(this._name(b), undefined, { sensitivity: 'base' }),
     );
+    const search = this._deviceSearch.trim().toLocaleLowerCase();
+    const filteredContacts = search
+      ? allContacts.filter(contact =>
+          this._name(contact).toLocaleLowerCase().includes(search)
+          || contact.pubkey_prefix.toLocaleLowerCase().includes(search),
+        )
+      : allContacts;
 
     return html`
       <div class="layout">
@@ -547,18 +636,27 @@ export class MapPage extends LitElement {
             Devices
             <small>${this._nodes.length} with coordinates / ${allContacts.length} total</small>
           </div>
+          <div class="device-search">
+            <input
+              type="search"
+              placeholder="Search devices…"
+              aria-label="Search devices"
+              .value=${this._deviceSearch}
+              @input=${(e: Event) => { this._deviceSearch = (e.target as HTMLInputElement).value; }}>
+          </div>
           <div class="node-list">
-            ${allContacts.length
-              ? allContacts.map(contact => {
+            ${filteredContacts.length
+              ? filteredContacts.map(contact => {
                   const located = hasCoordinates(contact);
                   const active = this._selectedKey === contact.public_key;
+                  const activity = this._activity(contact);
                   return html`
                     <button
                       class="node ${located ? '' : 'no-location'} ${active ? 'active' : ''}"
                       ?disabled=${!located}
                       title=${located ? `Focus on ${this._name(contact)}` : 'No coordinates available'}
                       @click=${() => this._focus(contact)}>
-                      <span class="marker-preview" aria-hidden="true"></span>
+                      <span class="activity ${activity.className}" title=${activity.title} aria-label=${activity.title}>${activity.label}</span>
                       <span>
                         <span class="node-name">${this._name(contact)}</span>
                         <span class="node-prefix">${contact.pubkey_prefix || ''}</span>
@@ -568,7 +666,7 @@ export class MapPage extends LitElement {
                 })
               : html`
                   <div style="padding:16px;color:var(--secondary-text-color);font-size:13px;">
-                    No MeshCore nodes found.
+                    ${allContacts.length ? 'No devices match the search.' : 'No MeshCore nodes found.'}
                   </div>
                 `}
           </div>
