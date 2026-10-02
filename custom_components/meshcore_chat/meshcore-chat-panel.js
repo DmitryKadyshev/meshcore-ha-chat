@@ -5588,10 +5588,15 @@ let e,t,i,o,r,s,a,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,S,C,M,z,A,D,R,T,I,O,F,E,N,
                 `),`0 0 ${Math.max(1,this._mapSize.width)} ${Math.max(1,this._mapSize.height)}`,(e=>{const t=(null===(e=this._messageMap)||void 0===e?void 0:e.routes)||[],i=new Map;return t.forEach(e=>{e.points.forEach((e,t)=>{const o=i.get(e.key),r=0===t;(!o||t<o.hop)&&i.set(e.key,{point:e,hop:t,sender:r})})}),jn(jo||(jo=Za`
                         ${0}
                         ${0}
-                      `),t.map((e,t)=>{if(e.points.length<2)return Gn;const i=e.points.map(e=>{const t=this._mapPoint(e.lat,e.lon);return`${t.left},${t.top}`}).join(" ");return jn(Uo||(Uo=Za`
+                      `),t.map((e,t)=>{if(e.points.length<2)return Gn;const i=e.points.map(e=>{const t=this._mapPoint(e.lat,e.lon);return`${t.left},${t.top}`}).join(" "),o=`message-route-${t}`;return jn(Uo||(Uo=Za`
                             <polyline class="message-route-glow" points=${0}></polyline>
-                            <polyline class="message-route ${0}" points=${0}></polyline>
-                          `),i,t?"secondary":"",i)}),[...i.values()].map(({point:e,hop:t,sender:i})=>{const o=this._mapPoint(e.lat,e.lon);return jn(Wo||(Wo=Za`
+                            <polyline id=${0} class="message-route ${0}" points=${0}></polyline>
+                            <circle class="message-route-packet ${0}" r="5">
+                              <animateMotion dur=${0} repeatCount="indefinite" rotate="auto">
+                                <mpath href=${0}></mpath>
+                              </animateMotion>
+                            </circle>
+                          `),i,o,t?"secondary":"",i,t?"secondary":"",t?"1.4s":"1.1s",`#${o}`)}),[...i.values()].map(({point:e,hop:t,sender:i})=>{const o=this._mapPoint(e.lat,e.lon);return jn(Wo||(Wo=Za`
                             <circle class="message-node ${0}" cx=${0} cy=${0} r=${0}></circle>
                             <circle class="message-node-core ${0}" cx=${0} cy=${0} r="4"></circle>
                             <text class="message-hop-label" x=${0} y=${0}>${0}</text>
@@ -5914,6 +5919,8 @@ let e,t,i,o,r,s,a,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,S,C,M,z,A,D,R,T,I,O,F,E,N,
     .message-route { fill: none; stroke: rgba(3,169,244,.92); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 10 9; filter: drop-shadow(0 0 3px rgba(3,169,244,.55)); animation: message-route-flow 900ms linear infinite; }
     .message-route.secondary { stroke: rgba(255,152,0,.78); stroke-width: 3.5; filter: drop-shadow(0 0 3px rgba(255,152,0,.48)); animation-duration: 1050ms; }
     .message-route-glow { fill: none; stroke: rgba(255,255,255,.28); stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; filter: blur(3px); animation: message-route-pulse 1.5s ease-in-out infinite; }
+    .message-route-packet { fill: #fff; stroke: rgba(3,169,244,.95); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(3,169,244,.95)); }
+    .message-route-packet.secondary { fill: #fff; stroke: rgba(255,152,0,.95); filter: drop-shadow(0 0 5px rgba(255,152,0,.9)); }
     @keyframes message-route-flow { to { stroke-dashoffset: -38px; } }
     @keyframes message-route-pulse { 0%, 100% { opacity: .35; } 50% { opacity: .9; } }
     .message-node { fill: var(--card-background-color,#fff); stroke: var(--primary-color,#03a9f4); stroke-width: 3; filter: drop-shadow(0 0 4px rgba(3,169,244,.75)); }
