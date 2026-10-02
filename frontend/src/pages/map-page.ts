@@ -386,6 +386,10 @@ export class MapPage extends LitElement {
       background: #fff;
     }
 
+    .activity-marker::after {
+      display: none;
+    }
+
     .controls {
       position: absolute;
       top: 12px;
