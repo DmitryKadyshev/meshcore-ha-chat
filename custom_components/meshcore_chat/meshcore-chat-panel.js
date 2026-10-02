@@ -5798,6 +5798,7 @@ let e,t,i,o,r,a,s,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,C,S,M,A,z,D,R,O,I,T,F,E,N,
     .marker-layer {
       position: absolute;
       inset: 0;
+      z-index: 2;
       pointer-events: none;
     }
 
