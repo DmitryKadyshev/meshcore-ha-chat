@@ -56,6 +56,7 @@ export class MapPage extends LitElement {
   private _dragging = false;
   private _dragStart = { x: 0, y: 0 };
   private _dragCenterPx = { x: 0, y: 0 };\n  private _wheelZoomTimer?: number;\n  private _pendingZoomDelta = 0;\n  private _activityTimer?: number;
+  private _tilePreloadCache = new Map<string, HTMLImageElement>();
 
   static styles = css`
     :host {
@@ -261,11 +262,19 @@ export class MapPage extends LitElement {
     .tiles.transition {
       z-index: 0;
       pointer-events: none;
+      transition: transform 280ms cubic-bezier(.22, .61, .36, 1), opacity 280ms ease;
+      transform-origin: 50% 50%;
     }
 
     .tiles.current {
       z-index: 1;
       pointer-events: none;
+      animation: tile-fade-in 280ms ease;
+    }
+
+    @keyframes tile-fade-in {
+      from { opacity: .25; }
+      to { opacity: 1; }
     }
 
     .tile {
@@ -423,6 +432,7 @@ export class MapPage extends LitElement {
       window.clearTimeout(this._tileTransitionTimer);
       this._tileTransitionTimer = undefined;
     }
+    this._tilePreloadCache.clear();
     if (this._panAnimationFrame !== undefined) {
       window.cancelAnimationFrame(this._panAnimationFrame);
       this._panAnimationFrame = undefined;
@@ -547,8 +557,22 @@ export class MapPage extends LitElement {
     if (next === this._zoom) return;
 
     const previousTiles = this._tileIndices();
-    this._tileTransition = { tiles: previousTiles, scale: 2 ** (next - this._zoom) };
+    this._tileTransition = {
+      tiles: previousTiles,
+      scale: 1,
+    };
     this._zoom = next;
+
+    this.requestUpdate();
+    requestAnimationFrame(() => {
+      if (this._tileTransition) {
+        this._tileTransition = {
+          ...this._tileTransition,
+          scale: 2 ** (next - (next - delta)),
+        };
+        this.requestUpdate();
+      }
+    });
 
     if (this._tileTransitionTimer !== undefined) {
       window.clearTimeout(this._tileTransitionTimer);
@@ -557,7 +581,9 @@ export class MapPage extends LitElement {
       this._tileTransition = undefined;
       this._tileTransitionTimer = undefined;
       this.requestUpdate();
-    }, 260);
+    }, 300);
+
+    this._preloadTiles(this._tileIndices());
   }
 
   private _mapPoint(lat: number, lon: number): { left: number; top: number } {
@@ -567,6 +593,16 @@ export class MapPage extends LitElement {
       left: this._mapSize.width / 2 + x - cx,
       top: this._mapSize.height / 2 + y - cy,
     };
+  }
+
+  private _preloadTiles(tiles: Array<{ src: string }>) {
+    for (const tile of tiles) {
+      if (this._tilePreloadCache.has(tile.src)) continue;
+      const image = new Image();
+      image.decoding = 'async';
+      image.src = tile.src;
+      this._tilePreloadCache.set(tile.src, image);
+    }
   }
 
   private _tileIndices(): Array<{ x: number; y: number; left: number; top: number; src: string }> {
