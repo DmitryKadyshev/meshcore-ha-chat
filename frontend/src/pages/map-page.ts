@@ -350,7 +350,16 @@ export class MapPage extends LitElement {
       pointer-events: none;
       overflow: visible;
     }
-    .message-route-layer { position: absolute; inset: 0; z-index: 3; pointer-events: none; overflow: visible; }
+    .message-route-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 3;
+      width: 100%;
+      height: 100%;
+      display: block;
+      overflow: visible;
+      pointer-events: none;
+    }
     .message-route { fill: none; stroke: rgba(3,169,244,.92); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 10 9; filter: drop-shadow(0 0 3px rgba(3,169,244,.55)); animation: message-route-flow 900ms linear infinite; }
     .message-route.secondary { stroke: rgba(255,152,0,.78); stroke-width: 3.5; filter: drop-shadow(0 0 3px rgba(255,152,0,.48)); animation-duration: 1050ms; }
     .message-route-glow { fill: none; stroke: rgba(255,255,255,.28); stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; filter: blur(3px); animation: message-route-pulse 1.5s ease-in-out infinite; }
@@ -691,28 +700,75 @@ export class MapPage extends LitElement {
   }
 
   private _findContactByHash(hash: string): Contact | undefined {
-    const normalized = hash.toLowerCase();
+    const normalized = hash.toLowerCase().replace(/[^0-9a-f]/g, '');
+    if (!normalized) return undefined;
+
     const matches = this.contacts.filter(contact => {
       const key = String(contact.public_key || '').toLowerCase();
       const prefix = String(contact.pubkey_prefix || '').toLowerCase();
+      // MeshCore path IDs are the first 1–3 bytes of a node public key.
       return key.startsWith(normalized) || prefix.startsWith(normalized);
     });
     if (!matches.length) return undefined;
     if (matches.length === 1) return matches[0];
+
+    // A short path hash can legitimately collide. Prefer a located contact,
+    // then the contact most recently modified by the local radio.
     const located = matches.filter(hasCoordinates);
     if (located.length === 1) return located[0];
-    return [...matches].sort((a, b) => (Number(b.last_advert) || 0) - (Number(a.last_advert) || 0))[0];
+    return [...matches].sort((a, b) =>
+      (Number(b.lastmod) || Number(b.last_advert) || 0)
+      - (Number(a.lastmod) || Number(a.last_advert) || 0),
+    )[0];
   }
 
   private _pathHashes(rx: Record<string, unknown>): string[] {
-    const pathNodes = Array.isArray(rx.path_nodes) ? rx.path_nodes : null;
-    if (pathNodes) return pathNodes.map(node => typeof node === 'object' && node !== null ? String((node as Record<string, unknown>).hash || '') : String(node)).filter(Boolean).map(v => v.toLowerCase());
-    const path = String(rx.path || '').replace(/[^0-9a-f]/gi, '').toLowerCase();
+    // meshcore-ha puts path/path_hash_size at the top level of rx_log_data,
+    // but keep support for parsed/decrypted nested payloads as well.
+    const nested = [
+      rx,
+      ...(rx.parsed && typeof rx.parsed === 'object' ? [rx.parsed as Record<string, unknown>] : []),
+      ...(rx.decrypted && typeof rx.decrypted === 'object' ? [rx.decrypted as Record<string, unknown>] : []),
+    ];
+
+    for (const source of nested) {
+      const pathNodes = Array.isArray(source.path_nodes) ? source.path_nodes : null;
+      if (pathNodes?.length) {
+        return pathNodes
+          .map(node => typeof node === 'object' && node !== null
+            ? String((node as Record<string, unknown>).hash || '')
+            : String(node))
+          .map(value => value.replace(/[^0-9a-f]/gi, '').toLowerCase())
+          .filter(Boolean);
+      }
+    }
+
+    const source = nested.find(item => typeof item.path === 'string' && item.path);
+    const path = String(source?.path || '').replace(/[^0-9a-f]/gi, '').toLowerCase();
     if (!path) return [];
-    const hashSize = Math.max(1, Number(rx.path_hash_size) || 1);
+
+    const explicitHashSize = nested
+      .map(item => Number(item.path_hash_size))
+      .find(value => Number.isFinite(value) && value >= 1 && value <= 3);
+
+    let hashSize = explicitHashSize || 0;
+    if (!hashSize) {
+      const pathLen = nested
+        .map(item => Number(item.path_len))
+        .find(value => Number.isFinite(value) && value > 0);
+      if (pathLen && path.length % pathLen === 0) {
+        hashSize = path.length / pathLen / 2;
+      }
+    }
+    if (!hashSize || !Number.isInteger(hashSize)) {
+      hashSize = path.length % 6 === 0 ? 3 : path.length % 4 === 0 ? 2 : 1;
+    }
+
     const width = hashSize * 2;
     const hashes: string[] = [];
-    for (let i = 0; i + width <= path.length; i += width) hashes.push(path.slice(i, i + width));
+    for (let i = 0; i + width <= path.length; i += width) {
+      hashes.push(path.slice(i, i + width));
+    }
     return hashes;
   }
 
@@ -721,7 +777,11 @@ export class MapPage extends LitElement {
     const channel = String(data.channel || '');
     const target = channel ? `#${channel}` : sender;
     const senderPrefix = String(data.pubkey_prefix || '').toLowerCase();
-    const senderContact = senderPrefix ? this._findContactByHash(senderPrefix) : undefined;
+    const senderContact = (senderPrefix ? this._findContactByHash(senderPrefix) : undefined)
+      || this.contacts.find(contact =>
+        hasCoordinates(contact)
+        && this._name(contact).trim().toLowerCase() === sender.trim().toLowerCase(),
+      );
     const senderPoint: MessageMapPoint | undefined = senderContact && hasCoordinates(senderContact) ? {
       key: senderContact.public_key, name: this._name(senderContact), lat: senderContact.adv_lat, lon: senderContact.adv_lon,
     } : undefined;
@@ -1162,7 +1222,13 @@ export class MapPage extends LitElement {
 
             ${this._showMessage
               ? html`
-                  <svg class="message-route-layer" aria-hidden="true">
+                  <svg
+                    class="message-route-layer"
+                    aria-hidden="true"
+                    width="100%"
+                    height="100%"
+                    preserveAspectRatio="none"
+                  >
                     ${(() => {
                       const routes = this._messageMap?.routes || [];
                       const nodeMap = new Map<string, { point: MessageMapPoint; hop: number; sender: boolean }>();
