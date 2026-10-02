@@ -418,9 +418,11 @@ export class MapPage extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this._resizeObserver = new ResizeObserver(() => {
-      const rect = this.getBoundingClientRect();
-      this._mapSize = { width: rect.width, height: rect.height };
+    this._resizeObserver = new ResizeObserver(entries => {
+      const entry = entries[0];
+      if (!entry) return;
+      const { width, height } = entry.contentRect;
+      this._mapSize = { width, height };
       this._fitAll();
     });
   }
