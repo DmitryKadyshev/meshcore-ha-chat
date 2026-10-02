@@ -598,23 +598,19 @@ export class MapPage extends LitElement {
 
             <div class="marker-layer">
               ${this._nodes.map(node => {
-${this._nodes.map(node => {
-              const point = this._mapPoint(node.lat, node.lon);
-              const selected = this._selectedKey === node.contact.public_key;
-              return html`
-                <button
-                  class="marker ${selected ? 'selected' : ''}"
-                  title=${this._name(node.contact)}
-                  aria-label=${this._name(node.contact)}
-                  style="left:${point.left}px;top:${point.top}px;"
-                  @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
-                  @click=${(e: Event) => { e.stopPropagation(); this._focus(node.contact); }}>
-                </button>
-              `;
-            })}
-          </div>
-
-  
+                const point = this._mapPoint(node.lat, node.lon);
+                const selected = this._selectedKey === node.contact.public_key;
+                return html`
+                  <button
+                    class="marker ${selected ? 'selected' : ''}"
+                    title=${this._name(node.contact)}
+                    aria-label=${this._name(node.contact)}
+                    style="left:${point.left}px;top:${point.top}px;"
+                    @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                    @click=${(e: Event) => { e.stopPropagation(); this._focus(node.contact); }}>
+                  </button>
+                `;
+              })}
             </div>
           </div>
 
