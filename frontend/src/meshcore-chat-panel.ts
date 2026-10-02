@@ -8,6 +8,7 @@ import { getDevices, getContacts, getChannels, getUnreadAndLastRead, markConvers
 import { UnreadController } from './chat/unread-controller';
 import './pages/chat-page';
 import './pages/devices-page';
+import './pages/map-page';
 import './pages/nodes-page';
 import './pages/settings-page';
 import './components/trace-dialog';
@@ -20,7 +21,7 @@ export class MeshCorePanel extends LitElement {
   @property({ type: Object }) panel?: Record<string, unknown>;
 
   @state() private _config: PanelConfig | null = null;
-  @state() private _activeTab: 'chat' | 'devices' | 'nodes' | 'settings' = 'chat';
+  @state() private _activeTab: 'chat' | 'map' | 'devices' | 'nodes' | 'settings' = 'chat';
   // managedDevices removed — devices-page.ts fetches its own data
   @state() private _devices: MeshCoreDevice[] = [];
   @state() private _contacts: Contact[] = [];
@@ -799,6 +800,11 @@ export class MeshCorePanel extends LitElement {
             Chat
           </button>
           <button
+            class=${this._activeTab === 'map' ? 'active' : ''}
+            @click=${() => (this._activeTab = 'map')}>
+            Map
+          </button>
+          <button
             class=${this._activeTab === 'devices' ? 'active' : ''}
             @click=${() => (this._activeTab = 'devices')}>
             Devices
@@ -854,6 +860,13 @@ export class MeshCorePanel extends LitElement {
             @active-entity-changed=${this._onActiveEntityChanged}
             @contacts-changed=${() => this._loadDeviceData()}
             @channels-changed=${() => this._loadDeviceData()}></meshcore-chat-page>`;
+      case 'map':
+        return html`
+          <meshcore-map-page
+            .hass=${this.hass}
+            .config=${this._config}
+            .contacts=${this._contacts}
+            .narrow=${this.narrow}></meshcore-map-page>`;
       case 'devices':
         return html`
           <meshcore-devices-page
