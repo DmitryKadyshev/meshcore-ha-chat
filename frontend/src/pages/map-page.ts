@@ -49,7 +49,7 @@ export class MapPage extends LitElement {
   @state() private _center: [number, number] = DEFAULT_CENTER;
   @state() private _zoom = 5;
   @state() private _mapSize = { width: 0, height: 0 };
-  @state() private _deviceSearch = '';\n  @state() private _activityNow = Date.now();
+  @state() private _deviceSearch = '';\n  @state() private _deviceSort: 'name' | 'activity' = 'name';\n  @state() private _activityNow = Date.now();
 
   private _mapEl?: HTMLElement;
   private _resizeObserver?: ResizeObserver;
@@ -165,7 +165,7 @@ export class MapPage extends LitElement {
       opacity: .55;
     }
 
-    .node-list {
+    .sort-select {\n      padding: 8px 10px;\n      border-bottom: 1px solid var(--divider-color, #e0e0e0);\n      flex-shrink: 0;\n    }\n\n    .sort-select select {\n      width: 100%;\n      box-sizing: border-box;\n      padding: 7px 9px;\n      border: 1px solid var(--divider-color, #ccc);\n      border-radius: 7px;\n      background: var(--primary-background-color, #fafafa);\n      color: var(--primary-text-color);\n      font: inherit;\n      font-size: 12px;\n    }\n\n    .node-list {
       overflow-y: auto;
       min-height: 0;
       flex: 1;
@@ -298,10 +298,39 @@ export class MapPage extends LitElement {
       padding: 0;
     }
 
-    .marker.selected {
-      width: 22px;
-      height: 22px;
-      background: var(--accent-color, #ff9800);
+    .activity-marker {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 2px solid #fff;
+      background: hsl(var(--activity-hue, 0) var(--activity-sat, 65%) var(--activity-light, 46%));
+      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 8px;
+      font-weight: 700;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .45);
+      box-shadow: 0 1px 5px rgba(0, 0, 0, .35);
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    .activity-marker.green { --activity-hue: 142; }
+    .activity-marker.yellow { --activity-hue: 45; }
+    .activity-marker.red { --activity-hue: 0; }
+    .activity-marker.gray {
+      --activity-hue: 0;
+      --activity-sat: 0%;
+      --activity-light: 52%;
+    }
+
+    .activity-marker.selected {
+      width: 40px;
+      height: 40px;
       z-index: 2;
     }
 
@@ -641,9 +670,14 @@ export class MapPage extends LitElement {
   }
 
   render() {
-    const allContacts = [...this.contacts].sort((a, b) =>
-      this._name(a).localeCompare(this._name(b), undefined, { sensitivity: 'base' }),
-    );
+    const allContacts = [...this.contacts].sort((a, b) => {
+      if (this._deviceSort === 'activity') {
+        const activityA = Number(a.last_advert) || 0;
+        const activityB = Number(b.last_advert) || 0;
+        if (activityA !== activityB) return activityB - activityA;
+      }
+      return this._name(a).localeCompare(this._name(b), undefined, { sensitivity: 'base' });
+    });
     const search = this._deviceSearch.trim().toLocaleLowerCase();
     const filteredContacts = search
       ? allContacts.filter(contact =>
@@ -666,6 +700,17 @@ export class MapPage extends LitElement {
               aria-label="Search devices"
               .value=${this._deviceSearch}
               @input=${(e: Event) => { this._deviceSearch = (e.target as HTMLInputElement).value; }}>
+          </div>
+          <div class="sort-select">
+            <select
+              aria-label="Sort devices"
+              .value=${this._deviceSort}
+              @change=${(e: Event) => {
+                this._deviceSort = (e.target as HTMLSelectElement).value as 'name' | 'activity';
+              }}>
+              <option value="name">Sort: Name</option>
+              <option value="activity">Sort: Last activity</option>
+            </select>
           </div>
           <div class="node-list">
             ${filteredContacts.length
@@ -723,12 +768,13 @@ export class MapPage extends LitElement {
                 const selected = this._selectedKey === node.contact.public_key;
                 return html`
                   <button
-                    class="marker ${selected ? 'selected' : ''}"
-                    title=${this._name(node.contact)}
-                    aria-label=${this._name(node.contact)}
-                    style="left:${point.left}px;top:${point.top}px;"
+                    class="marker activity-marker ${activity.className} ${selected ? 'selected' : ''}"
+                    title=${activity.title}
+                    aria-label=${this._name(node.contact)} — ${activity.title}
+                    style="left:${point.left}px;top:${point.top}px;${activity.style || ''}"
                     @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
                     @click=${(e: Event) => { e.stopPropagation(); this._focus(node.contact); }}>
+                    <span>${activity.label}</span>
                   </button>
                 `;
               })}
