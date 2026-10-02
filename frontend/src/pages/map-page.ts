@@ -1024,6 +1024,25 @@ export class MapPage extends LitElement {
               .value=${this._deviceSearch}
               @input=${(e: Event) => { this._deviceSearch = (e.target as HTMLInputElement).value; }}>
           </div>
+          <div class="message-toggle">
+            <label>
+              <input
+                type="checkbox"
+                .checked=${this._showMessage}
+                @change=${(e: Event) => {
+                  this._showMessage = (e.target as HTMLInputElement).checked;
+                  if (!this._showMessage) {
+                    this._messageMap = null;
+                    this._selectedKey = null;
+                    this._fitAll();
+                  } else {
+                    this._fitMessage();
+                  }
+                }}>
+              <span>Show message</span>
+            </label>
+            <small>Hide nodes and show the latest message route</small>
+          </div>
           <div class="sort-select">
             <select
               aria-label="Sort devices"
@@ -1085,46 +1104,81 @@ export class MapPage extends LitElement {
               `)}
             </div>
 
-            <div class="marker-layer">
-              ${(() => {
-                const nodes = this._nodes;
-                return nodes.map(node => {
-                  const point = this._mapPoint(node.lat, node.lon);
-                  const selected = this._selectedKey === node.contact.public_key;
-                  const activity = this._activity(node.contact);
-                  return html`
-                    <button
-                      class="marker activity-marker ${activity.className} ${selected ? 'selected' : ''}"
-                      title=${activity.title}
-                      aria-label=${this._name(node.contact)} — ${activity.title}
-                      style="left:${point.left}px;top:${point.top}px;${activity.style || ''}"
-                      @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
-                      @click=${(e: Event) => { e.stopPropagation(); this._focus(node.contact); }}>
-                      <span>${activity.label}</span>
-                    </button>
-                  `;
-                });
-              })()}
-            </div>
-
-            <div class="label-layer">
-              ${(() => {
-                const nodes = this._nodes;
-                const visibleLabels = this._visibleLabelKeys(nodes);
-                const labelScale = this._labelScale();
-                return nodes.map(node => {
-                  if (!visibleLabels.has(node.contact.public_key)) return nothing;
-                  const point = this._mapPoint(node.lat, node.lon);
-                  return html`
-                    <span
-                      class="node-label"
-                      style="left:${point.left}px;top:${point.top}px;--label-scale:${labelScale}">
-                      ${this._name(node.contact)}
-                    </span>
-                  `;
-                });
-              })()}
-            </div>
+            ${this._showMessage
+              ? html`
+                  <svg class="message-route-layer" aria-hidden="true">
+                    ${this._messageMap?.routes.map((route, index) => {
+                      if (route.points.length < 2) return nothing;
+                      const points = route.points.map(point => {
+                        const screen = this._mapPoint(point.lat, point.lon);
+                        return `${screen.left},${screen.top}`;
+                      }).join(" ");
+                      return html`
+                        <polyline class="message-route ${index ? "secondary" : ""}" points=${points}></polyline>
+                        ${route.points.slice(1).map((point, hopIndex) => {
+                          const screen = this._mapPoint(point.lat, point.lon);
+                          return html`
+                            <circle class="message-hop" cx=${screen.left} cy=${screen.top} r="5"></circle>
+                            <text class="message-hop-label" x=${screen.left + 8} y=${screen.top - 7}>${hopIndex + 1}. ${point.name}</text>
+                          `;
+                        })}
+                      `;
+                    })}
+                  </svg>
+                  ${this._messageMap ? (() => {
+                    const bubble = this._messageBubblePoint();
+                    const routeCount = this._messageMap.routes.length;
+                    const hopCount = Math.max(0, ...this._messageMap.routes.map(route => Math.max(0, route.points.length - 1)));
+                    return html`
+                      <div class="message-bubble" style="left:${bubble.left}px;top:${bubble.top}px;">
+                        <div class="message-bubble-title">${this._messageMap.target}</div>
+                        <div class="message-bubble-sender">${this._messageMap.sender}</div>
+                        <div class="message-bubble-text">${this._messageMap.text}</div>
+                        <div class="message-bubble-route">${routeCount ? `${routeCount} route${routeCount === 1 ? "" : "s"} · ${hopCount} hop${hopCount === 1 ? "" : "s"}` : "Route is not available from known node coordinates"}</div>
+                      </div>
+                    `;
+                  })() : nothing}
+                `
+              : html`
+                  <div class="marker-layer">
+                    ${(() => {
+                      const nodes = this._nodes;
+                      return nodes.map(node => {
+                        const point = this._mapPoint(node.lat, node.lon);
+                        const selected = this._selectedKey === node.contact.public_key;
+                        const activity = this._activity(node.contact);
+                        return html`
+                          <button
+                            class="marker activity-marker ${activity.className} ${selected ? "selected" : ""}"
+                            title=${activity.title}
+                            aria-label=${this._name(node.contact)} — ${activity.title}
+                            style="left:${point.left}px;top:${point.top}px;${activity.style || ""}"
+                            @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+                            @click=${(e: Event) => { e.stopPropagation(); this._focus(node.contact); }}>
+                            <span>${activity.label}</span>
+                          </button>
+                        `;
+                      });
+                    })()}
+                  </div>
+                  <div class="label-layer">
+                    ${(() => {
+                      const nodes = this._nodes;
+                      const visibleLabels = this._visibleLabelKeys(nodes);
+                      const labelScale = this._labelScale();
+                      return nodes.map(node => {
+                        if (!visibleLabels.has(node.contact.public_key)) return nothing;
+                        const point = this._mapPoint(node.lat, node.lon);
+                        return html`
+                          <span class="node-label" style="left:${point.left}px;top:${point.top}px;--label-scale:${labelScale}">
+                            ${this._name(node.contact)}
+                          </span>
+                        `;
+                      });
+                    })()}
+                  </div>
+                `
+            }
           </div>
 
         <div
@@ -1136,9 +1190,13 @@ export class MapPage extends LitElement {
             <button type="button" title="Fit all devices" @click=${() => { this._selectedKey = null; this._fitAll(); }}>⌂</button>
           </div>
 
-          ${this._nodes.length
-            ? nothing
-            : html`<div class="empty-map">No devices with coordinates are available.</div>`}
+          ${this._showMessage
+            ? (!this._messageMap
+              ? html`<div class="empty-map">Waiting for a MeshCore message…</div>`
+              : nothing)
+            : (this._nodes.length
+              ? nothing
+              : html`<div class="empty-map">No devices with coordinates are available.</div>`)}
 
           <div class="attribution">© OpenStreetMap contributors</div>
         </main>
