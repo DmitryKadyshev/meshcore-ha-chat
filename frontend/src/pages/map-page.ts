@@ -527,6 +527,9 @@ export class MapPage extends LitElement {
     super.connectedCallback();
     this._messageSubscriptionsActive = true;
     this._setupMessageSubscriptions();
+    this._activityTimer = window.setInterval(() => {
+      this._activityNow = Date.now();
+    }, 30_000);
     this._resizeObserver = new ResizeObserver(entries => {
       const entry = entries[0];
       if (!entry) return;
@@ -545,6 +548,10 @@ export class MapPage extends LitElement {
     }
     this._messageSubscriptionsActive = false;
     this._teardownMessageSubscriptions();
+    if (this._activityTimer !== undefined) {
+      window.clearInterval(this._activityTimer);
+      this._activityTimer = undefined;
+    }
     this._tilePreloadCache.clear();
     if (this._panAnimationFrame !== undefined) {
       window.cancelAnimationFrame(this._panAnimationFrame);
@@ -584,7 +591,11 @@ export class MapPage extends LitElement {
   }
 
   private _activity(contact: Contact): { className: string; label: string; title: string; style?: string } {
-    const timestamp = Number(contact.last_advert);
+    // lastmod is the local MeshCore contact-store timestamp and is a
+    // better indicator of when this node was actually heard by our radio.
+    // last_advert is the remote node's advertised timestamp and may be
+    // stale or affected by the remote RTC.
+    const timestamp = Number(contact.lastmod) || Number(contact.last_advert);
     if (!Number.isFinite(timestamp) || timestamp <= 0) {
       return { className: 'gray', label: '—', title: 'No activity timestamp' };
     }
@@ -1040,8 +1051,8 @@ export class MapPage extends LitElement {
   render() {
     const allContacts = [...this.contacts].sort((a, b) => {
       if (this._deviceSort === 'activity') {
-        const activityA = Number(a.last_advert) || 0;
-        const activityB = Number(b.last_advert) || 0;
+        const activityA = Number(a.lastmod) || Number(a.last_advert) || 0;
+        const activityB = Number(b.lastmod) || Number(b.last_advert) || 0;
         if (activityA !== activityB) return activityB - activityA;
       }
       return this._name(a).localeCompare(this._name(b), undefined, { sensitivity: 'base' });
