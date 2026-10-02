@@ -128,7 +128,7 @@ export class MapPage extends LitElement {
     }
 
     .node.active {
-      background: color-mix(in srgb, var(--primary-color, #03a9f4) 12%, transparent);
+      background: rgba(3, 169, 244, 0.12);
     }
 
     .node:disabled {
@@ -141,7 +141,7 @@ export class MapPage extends LitElement {
       height: 10px;
       border-radius: 50%;
       background: var(--primary-color, #03a9f4);
-      box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary-color, #03a9f4) 20%, transparent);
+      box-shadow: 0 0 0 3px rgba(3, 169, 244, 0.20);
       flex: 0 0 auto;
     }
 
@@ -210,7 +210,7 @@ export class MapPage extends LitElement {
       border-radius: 50% 50% 50% 0;
       background: var(--primary-color, #03a9f4);
       box-shadow: 0 1px 5px rgba(0, 0, 0, .35);
-      rotate: -45deg;
+      transform: translate(-50%, -50%) rotate(-45deg);
       pointer-events: auto;
       cursor: pointer;
       padding: 0;
@@ -300,6 +300,7 @@ export class MapPage extends LitElement {
     this._resizeObserver = new ResizeObserver(() => {
       const rect = this.getBoundingClientRect();
       this._mapSize = { width: rect.width, height: rect.height };
+      this._fitAll();
     });
   }
 
