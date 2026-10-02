@@ -1040,6 +1040,8 @@ export class MapPage extends LitElement {
   private _applyPanTransform() {
     const content = this.shadowRoot?.querySelector('.map-content') as HTMLElement | null;
     if (!content) return;
+    // Guard against stale/older component instances where the field was not initialized.
+    this._panVisual ??= { x: 0, y: 0 };
     content.style.transform = `translate3d(${this._panVisual.x}px, ${this._panVisual.y}px, 0)`;
   }
 
