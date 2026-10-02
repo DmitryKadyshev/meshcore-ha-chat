@@ -54,7 +54,7 @@ export class MapPage extends LitElement {
   private _resizeObserver?: ResizeObserver;
   private _dragging = false;
   private _dragStart = { x: 0, y: 0 };
-  private _dragCenterPx = { x: 0, y: 0 };
+  private _dragCenterPx = { x: 0, y: 0 };\n  private _wheelZoomTimer?: number;\n  private _pendingZoomDelta = 0;
 
   static styles = css`
     :host {
@@ -538,10 +538,13 @@ export class MapPage extends LitElement {
             })}
           </div>
 
-          <div class="controls">
-            <button title="Zoom in" @click=${() => this._zoomBy(1)}>+</button>
-            <button title="Zoom out" @click=${() => this._zoomBy(-1)}>−</button>
-            <button title="Fit all devices" @click=${() => { this._selectedKey = null; this._fitAll(); }}>⌂</button>
+          <div
+            class="controls"
+            @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+            @dblclick=${(e: MouseEvent) => e.stopPropagation()}>
+            <button type="button" title="Zoom in" @click=${() => this._zoomBy(1)}>+</button>
+            <button type="button" title="Zoom out" @click=${() => this._zoomBy(-1)}>−</button>
+            <button type="button" title="Fit all devices" @click=${() => { this._selectedKey = null; this._fitAll(); }}>⌂</button>
           </div>
 
           ${this._nodes.length
