@@ -5719,7 +5719,25 @@ let e,t,i,o,r,s,a,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,S,C,M,z,A,D,R,O,T,I,F,E,N,
       opacity: .55;
     }
 
-    .sort-select {\n      padding: 8px 10px;\n      border-bottom: 1px solid var(--divider-color, #e0e0e0);\n      flex-shrink: 0;\n    }\n\n    .sort-select select {\n      width: 100%;\n      box-sizing: border-box;\n      padding: 7px 9px;\n      border: 1px solid var(--divider-color, #ccc);\n      border-radius: 7px;\n      background: var(--primary-background-color, #fafafa);\n      color: var(--primary-text-color);\n      font: inherit;\n      font-size: 12px;\n    }\n\n    .message-toggle {
+    .sort-select {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--divider-color, #e0e0e0);
+      flex-shrink: 0;
+    }
+
+    .sort-select select {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 7px 9px;
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 7px;
+      background: var(--primary-background-color, #fafafa);
+      color: var(--primary-text-color);
+      font: inherit;
+      font-size: 12px;
+    }
+
+    .message-toggle {
       padding: 9px 10px;
       border-bottom: 1px solid var(--divider-color, #e0e0e0);
       flex-shrink: 0;
