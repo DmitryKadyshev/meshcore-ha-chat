@@ -375,6 +375,8 @@ export class MapPage extends LitElement {
     @keyframes message-node-pulse { 0%, 100% { r: 4; opacity: .75; } 50% { r: 7; opacity: 1; } }
     .message-hop-label { font-size: 10px; font-weight: 700; fill: var(--primary-text-color,#222); paint-order: stroke; stroke: rgba(255,255,255,.92); stroke-width: 3px; stroke-linejoin: round; }
     .message-bubble { position: absolute; z-index: 5; max-width: min(360px,calc(100% - 32px)); min-width: 180px; padding: 10px 12px; border: 1px solid rgba(3,169,244,.45); border-radius: 12px; background: rgba(255,255,255,.94); color: #222; box-shadow: 0 4px 16px rgba(0,0,0,.28); transform: translate(14px,calc(-100% - 14px)); pointer-events: none; overflow: hidden; }
+    .message-bubble.no-route { transform: translateX(-50%); }
+    .message-bubble.no-route::after { display: none; }
     .message-bubble::after { content: ''; position: absolute; left: 10px; bottom: -7px; width: 14px; height: 14px; background: rgba(255,255,255,.94); border-right: 1px solid rgba(3,169,244,.45); border-bottom: 1px solid rgba(3,169,244,.45); transform: rotate(45deg); }
     .message-bubble-title { position: relative; z-index: 1; font-size: 12px; font-weight: 700; color: var(--primary-color,#03a9f4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .message-bubble-sender { position: relative; z-index: 1; margin-top: 2px; font-size: 10px; color: var(--secondary-text-color,#666); }
@@ -820,7 +822,10 @@ export class MapPage extends LitElement {
   private _fitMessage() {
     if (!this._showMessage || !this._messageMap) return;
     const points = this._messageMap.routes.flatMap(route => route.points);
-    if (!points.length) { this._center = DEFAULT_CENTER; this._zoom = 5; return; }
+    // If the route cannot be resolved to known node coordinates, keep the
+    // map exactly where the user currently has it. The message bubble is
+    // rendered independently of map coordinates in that case.
+    if (!points.length) return;
     const minLat = Math.min(...points.map(point => point.lat));
     const maxLat = Math.max(...points.map(point => point.lat));
     const minLon = Math.min(...points.map(point => point.lon));
@@ -840,7 +845,9 @@ export class MapPage extends LitElement {
   private _messageBubblePoint(): { left: number; top: number } {
     const point = this._messageMap?.routes[0]?.points[0];
     if (point) return this._mapPoint(point.lat, point.lon);
-    return { left: Math.max(20, this._mapSize.width / 2 - 90), top: Math.max(80, this._mapSize.height / 2) };
+    // No route coordinates: anchor the message to the current map viewport,
+    // centered horizontally near its upper edge rather than using 0,0.
+    return { left: this._mapSize.width / 2, top: 24 };
   }
   private _fitAll() {
     const nodes = this._nodes;
@@ -1281,7 +1288,7 @@ export class MapPage extends LitElement {
                     const routeCount = this._messageMap.routes.length;
                     const hopCount = Math.max(0, ...this._messageMap.routes.map(route => Math.max(0, route.points.length - 1)));
                     return html`
-                      <div class="message-bubble" style="left:${bubble.left}px;top:${bubble.top}px;">
+                      <div class="message-bubble ${routeCount ? "" : "no-route"}" style="left:${bubble.left}px;top:${bubble.top}px;">
                         <div class="message-bubble-title">${this._messageMap.target}</div>
                         <div class="message-bubble-sender">${this._messageMap.sender}</div>
                         <div class="message-bubble-text">${this._messageMap.text}</div>
