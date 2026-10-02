@@ -5478,12 +5478,20 @@ let e,t,i,o,r,a,s,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,C,S,M,A,z,D,R,O,I,T,F,E,N,
         margin-top: 8px;
         overflow-x: auto;
       }
-    `))],js([nl({type:Object})],bd.prototype,"hass",void 0),js([nl({type:Object})],bd.prototype,"config",void 0),js([nl({type:Boolean})],bd.prototype,"narrow",void 0),js([nl({type:Object})],bd.prototype,"selectedDevice",void 0),js([ll()],bd.prototype,"_managedDevices",void 0),js([ll()],bd.prototype,"_contactsByPrefix",void 0),js([ll()],bd.prototype,"_loading",void 0),js([ll()],bd.prototype,"_error",void 0),js([ll()],bd.prototype,"_confirmAction",void 0),js([ll()],bd.prototype,"_confirmDialogOpen",void 0),js([ll()],bd.prototype,"_commandDialogOpen",void 0),js([ll()],bd.prototype,"_commandDialogTarget",void 0),js([ll()],bd.prototype,"_commandDialogIsLocal",void 0),js([ll()],bd.prototype,"_statusMessage",void 0),js([ll()],bd.prototype,"_statusMessageTimeout",void 0),js([ll()],bd.prototype,"_deviceEntities",void 0),js([ll()],bd.prototype,"_meshcoreDeviceMap",void 0),js([ll()],bd.prototype,"_entityRegistryLoaded",void 0),js([ll()],bd.prototype,"_hiddenSensors",void 0),js([ll()],bd.prototype,"_contextMenu",void 0),js([ll()],bd.prototype,"_settingsDeviceKey",void 0),js([ll()],bd.prototype,"_hiddenSensorsModalKey",void 0),js([ll()],bd.prototype,"_neighborContextMenu",void 0),js([ll()],bd.prototype,"_neighborData",void 0),bd=js([rl("meshcore-devices-page")],bd);const _d=256,xd=[50,10];function wd(e){return Number.isFinite(e.adv_lat)&&Number.isFinite(e.adv_lon)&&Math.abs(e.adv_lat)<=90&&Math.abs(e.adv_lon)<=180&&!(0===e.adv_lat&&0===e.adv_lon)}function $d(e,t,i){const o=_d*2**i,r=Math.max(-85.05112878,Math.min(85.05112878,e)),a=(t+180)/360*o,s=Math.sin(r*Math.PI/180);return[a,(.5-Math.log((1+s)/(1-s))/(4*Math.PI))*o]}let kd=class extends il{constructor(){super(...arguments),this.contacts=[],this.narrow=!1,this._selectedKey=null,this._center=xd,this._zoom=5,this._mapSize={width:0,height:0},this._dragging=!1,this._dragStart={x:0,y:0},this._dragCenterPx={x:0,y:0},this._pendingZoomDelta=0,this._onPointerMove=e=>this._drag(e),this._onPointerUp=()=>this._endDrag()}connectedCallback(){super.connectedCallback(),this._resizeObserver=new ResizeObserver(()=>{const e=this.getBoundingClientRect();this._mapSize={width:e.width,height:e.height},this._fitAll()})}disconnectedCallback(){var e;null===(e=this._resizeObserver)||void 0===e||e.disconnect(),this._removePointerListeners(),void 0!==this._tileTransitionTimer&&(window.clearTimeout(this._tileTransitionTimer),this._tileTransitionTimer=void 0),void 0!==this._panAnimationFrame&&(window.cancelAnimationFrame(this._panAnimationFrame),this._panAnimationFrame=void 0),super.disconnectedCallback()}firstUpdated(){var e,t;this._mapEl=null===(e=this.shadowRoot)||void 0===e?void 0:e.querySelector(".map"),this._mapEl&&(null===(t=this._resizeObserver)||void 0===t||t.observe(this._mapEl)),this._fitAll()}updated(e){if(this._applyPanTransform(),e.has("contacts")){const e=this._selectedKey&&this.contacts.some(e=>e.public_key===this._selectedKey&&wd(e));e||(this._selectedKey=null),this._fitAll()}}get _nodes(){return this.contacts.filter(wd).map(e=>({contact:e,lat:e.adv_lat,lon:e.adv_lon}))}_name(e){return e.adv_name||e.pubkey_prefix||"Unknown node"}_fitAll(){const e=this._nodes;if(!e.length)return this._center=xd,void(this._zoom=5);const t=Math.min(...e.map(e=>e.lat)),i=Math.max(...e.map(e=>e.lat)),o=Math.min(...e.map(e=>e.lon)),r=Math.max(...e.map(e=>e.lon));if(this._center=[(t+i)/2,(o+r)/2],1===e.length)return void(this._zoom=12);const a=Math.max(this._mapSize.width-80,320),s=Math.max(this._mapSize.height-80,240);let n=18;for(let e=2;e<=18;e++){const[l,d]=$d(t,o,e),[c,p]=$d(i,r,e);if(Math.abs(c-l)<=a&&Math.abs(p-d)<=s){n=e;break}}this._zoom=Math.max(2,n-1)}_focus(e){wd(e)&&(this._selectedKey=e.public_key,this._center=[e.adv_lat,e.adv_lon],this._zoom=Math.max(this._zoom,12))}_zoomBy(e){const t=Math.max(2,Math.min(18,this._zoom+e));if(t===this._zoom)return;const i=this._tileIndices();this._tileTransition={tiles:i,scale:2**(t-this._zoom)},this._zoom=t,void 0!==this._tileTransitionTimer&&window.clearTimeout(this._tileTransitionTimer),this._tileTransitionTimer=window.setTimeout(()=>{this._tileTransition=void 0,this._tileTransitionTimer=void 0,this.requestUpdate()},260)}_mapPoint(e,t){const[i,o]=$d(this._center[0],this._center[1],this._zoom),[r,a]=$d(e,t,this._zoom);return{left:this._mapSize.width/2+r-i,top:this._mapSize.height/2+a-o}}_tileIndices(){if(!this._mapSize.width||!this._mapSize.height)return[];const[e,t]=$d(this._center[0],this._center[1],this._zoom),i=Math.floor((e-this._mapSize.width/2)/_d)-1,o=Math.floor((e+this._mapSize.width/2)/_d)+1,r=Math.floor((t-this._mapSize.height/2)/_d)-1,a=Math.floor((t+this._mapSize.height/2)/_d)+1,s=2**this._zoom,n=[];for(let l=i;l<=o;l++)for(let i=r;i<=a;i++){if(i<0||i>=s)continue;const o=(l%s+s)%s;n.push({x:l,y:i,left:this._mapSize.width/2+l*_d-e,top:this._mapSize.height/2+i*_d-t,src:`https://tile.openstreetmap.org/${this._zoom}/${o}/${i}.png`})}return n}_startDrag(e){var t,i;if(0!==e.button&&"touch"!==e.pointerType)return;const[o,r]=$d(this._center[0],this._center[1],this._zoom);this._dragging=!0,this._dragStart={x:e.clientX,y:e.clientY},this._dragCenterPx={x:o,y:r},null===(t=this._mapEl)||void 0===t||t.setPointerCapture(e.pointerId),null===(i=this._mapEl)||void 0===i||i.classList.add("dragging"),this._addPointerListeners()}_drag(e){this._dragging&&(this._panVisual={x:e.clientX-this._dragStart.x,y:e.clientY-this._dragStart.y},this._schedulePanTransform())}_schedulePanTransform(){void 0===this._panAnimationFrame&&(this._panAnimationFrame=window.requestAnimationFrame(()=>{this._panAnimationFrame=void 0,this._applyPanTransform()}))}_applyPanTransform(){var e;const t=null===(e=this.shadowRoot)||void 0===e?void 0:e.querySelector(".map-content");t&&(t.style.transform=`translate3d(${this._panVisual.x}px, ${this._panVisual.y}px, 0)`)}_endDrag(){var e;if(!this._dragging)return;this._dragging=!1,null===(e=this._mapEl)||void 0===e||e.classList.remove("dragging");const{x:t,y:i}=this._panVisual;if(0!==t||0!==i){const[e,o]=function(e,t,i){const o=_d*2**i,r=e/o*360-180,a=Math.PI-2*Math.PI*t/o;return[180/Math.PI*Math.atan(Math.sinh(a)),r]}(this._dragCenterPx.x-t,this._dragCenterPx.y-i,this._zoom);this._center=[e,o],this._panVisual={x:0,y:0},this._applyPanTransform()}this._removePointerListeners()}_addPointerListeners(){var e,t,i;null===(e=this._mapEl)||void 0===e||e.addEventListener("pointermove",this._onPointerMove),null===(t=this._mapEl)||void 0===t||t.addEventListener("pointerup",this._onPointerUp),null===(i=this._mapEl)||void 0===i||i.addEventListener("pointercancel",this._onPointerUp)}_removePointerListeners(){var e,t,i;null===(e=this._mapEl)||void 0===e||e.removeEventListener("pointermove",this._onPointerMove),null===(t=this._mapEl)||void 0===t||t.removeEventListener("pointerup",this._onPointerUp),null===(i=this._mapEl)||void 0===i||i.removeEventListener("pointercancel",this._onPointerUp)}_onWheel(e){e.preventDefault();const t=e.deltaY>0?-1:1;this._zoomBy(t)}render(){const e=[...this.contacts].sort((e,t)=>this._name(e).localeCompare(this._name(t),void 0,{sensitivity:"base"}));return Nn(Po||(Po=Us`
+    `))],js([nl({type:Object})],bd.prototype,"hass",void 0),js([nl({type:Object})],bd.prototype,"config",void 0),js([nl({type:Boolean})],bd.prototype,"narrow",void 0),js([nl({type:Object})],bd.prototype,"selectedDevice",void 0),js([ll()],bd.prototype,"_managedDevices",void 0),js([ll()],bd.prototype,"_contactsByPrefix",void 0),js([ll()],bd.prototype,"_loading",void 0),js([ll()],bd.prototype,"_error",void 0),js([ll()],bd.prototype,"_confirmAction",void 0),js([ll()],bd.prototype,"_confirmDialogOpen",void 0),js([ll()],bd.prototype,"_commandDialogOpen",void 0),js([ll()],bd.prototype,"_commandDialogTarget",void 0),js([ll()],bd.prototype,"_commandDialogIsLocal",void 0),js([ll()],bd.prototype,"_statusMessage",void 0),js([ll()],bd.prototype,"_statusMessageTimeout",void 0),js([ll()],bd.prototype,"_deviceEntities",void 0),js([ll()],bd.prototype,"_meshcoreDeviceMap",void 0),js([ll()],bd.prototype,"_entityRegistryLoaded",void 0),js([ll()],bd.prototype,"_hiddenSensors",void 0),js([ll()],bd.prototype,"_contextMenu",void 0),js([ll()],bd.prototype,"_settingsDeviceKey",void 0),js([ll()],bd.prototype,"_hiddenSensorsModalKey",void 0),js([ll()],bd.prototype,"_neighborContextMenu",void 0),js([ll()],bd.prototype,"_neighborData",void 0),bd=js([rl("meshcore-devices-page")],bd);const _d=256,xd=[50,10];function wd(e){return Number.isFinite(e.adv_lat)&&Number.isFinite(e.adv_lon)&&Math.abs(e.adv_lat)<=90&&Math.abs(e.adv_lon)<=180&&!(0===e.adv_lat&&0===e.adv_lon)}function $d(e,t,i){const o=_d*2**i,r=Math.max(-85.05112878,Math.min(85.05112878,e)),a=(t+180)/360*o,s=Math.sin(r*Math.PI/180);return[a,(.5-Math.log((1+s)/(1-s))/(4*Math.PI))*o]}let kd=class extends il{constructor(){super(...arguments),this.contacts=[],this.narrow=!1,this._selectedKey=null,this._center=xd,this._zoom=5,this._mapSize={width:0,height:0},this._deviceSearch="",this._dragging=!1,this._dragStart={x:0,y:0},this._dragCenterPx={x:0,y:0},this._pendingZoomDelta=0,this._onPointerMove=e=>this._drag(e),this._onPointerUp=()=>this._endDrag()}connectedCallback(){super.connectedCallback(),this._resizeObserver=new ResizeObserver(()=>{const e=this.getBoundingClientRect();this._mapSize={width:e.width,height:e.height},this._fitAll()})}disconnectedCallback(){var e;null===(e=this._resizeObserver)||void 0===e||e.disconnect(),this._removePointerListeners(),void 0!==this._tileTransitionTimer&&(window.clearTimeout(this._tileTransitionTimer),this._tileTransitionTimer=void 0),void 0!==this._panAnimationFrame&&(window.cancelAnimationFrame(this._panAnimationFrame),this._panAnimationFrame=void 0),super.disconnectedCallback()}firstUpdated(){var e,t;this._mapEl=null===(e=this.shadowRoot)||void 0===e?void 0:e.querySelector(".map"),this._mapEl&&(null===(t=this._resizeObserver)||void 0===t||t.observe(this._mapEl)),this._fitAll()}updated(e){if(this._applyPanTransform(),e.has("contacts")){const e=this._selectedKey&&this.contacts.some(e=>e.public_key===this._selectedKey&&wd(e));e||(this._selectedKey=null),this._fitAll()}}get _nodes(){return this.contacts.filter(wd).map(e=>({contact:e,lat:e.adv_lat,lon:e.adv_lon}))}_name(e){return e.adv_name||e.pubkey_prefix||"Unknown node"}_activity(e){const t=Number(e.last_advert);if(!Number.isFinite(t)||t<=0)return{className:"gray",label:"—",title:"No activity timestamp"};const i=t<1e10?1e3*t:t,o=Math.max(0,Date.now()-i),r=Math.floor(o/6e4);let a,s;return a=o<36e5?"green":o<108e5?"yellow":o<864e5?"red":"gray",s=r<1?"<1m":r<60?`${r}m`:r<1440?`${Math.floor(r/60)}h`:`${Math.floor(r/1440)}d`,{className:a,label:s,title:"<1m"===s?"Active less than 1 minute ago":`Last advert: ${s} ago`}}_fitAll(){const e=this._nodes;if(!e.length)return this._center=xd,void(this._zoom=5);const t=Math.min(...e.map(e=>e.lat)),i=Math.max(...e.map(e=>e.lat)),o=Math.min(...e.map(e=>e.lon)),r=Math.max(...e.map(e=>e.lon));if(this._center=[(t+i)/2,(o+r)/2],1===e.length)return void(this._zoom=12);const a=Math.max(this._mapSize.width-80,320),s=Math.max(this._mapSize.height-80,240);let n=18;for(let e=2;e<=18;e++){const[l,d]=$d(t,o,e),[c,p]=$d(i,r,e);if(Math.abs(c-l)<=a&&Math.abs(p-d)<=s){n=e;break}}this._zoom=Math.max(2,n-1)}_focus(e){wd(e)&&(this._selectedKey=e.public_key,this._center=[e.adv_lat,e.adv_lon],this._zoom=Math.max(this._zoom,12))}_zoomBy(e){const t=Math.max(2,Math.min(18,this._zoom+e));if(t===this._zoom)return;const i=this._tileIndices();this._tileTransition={tiles:i,scale:2**(t-this._zoom)},this._zoom=t,void 0!==this._tileTransitionTimer&&window.clearTimeout(this._tileTransitionTimer),this._tileTransitionTimer=window.setTimeout(()=>{this._tileTransition=void 0,this._tileTransitionTimer=void 0,this.requestUpdate()},260)}_mapPoint(e,t){const[i,o]=$d(this._center[0],this._center[1],this._zoom),[r,a]=$d(e,t,this._zoom);return{left:this._mapSize.width/2+r-i,top:this._mapSize.height/2+a-o}}_tileIndices(){if(!this._mapSize.width||!this._mapSize.height)return[];const[e,t]=$d(this._center[0],this._center[1],this._zoom),i=Math.floor((e-this._mapSize.width/2)/_d)-1,o=Math.floor((e+this._mapSize.width/2)/_d)+1,r=Math.floor((t-this._mapSize.height/2)/_d)-1,a=Math.floor((t+this._mapSize.height/2)/_d)+1,s=2**this._zoom,n=[];for(let l=i;l<=o;l++)for(let i=r;i<=a;i++){if(i<0||i>=s)continue;const o=(l%s+s)%s;n.push({x:l,y:i,left:this._mapSize.width/2+l*_d-e,top:this._mapSize.height/2+i*_d-t,src:`https://tile.openstreetmap.org/${this._zoom}/${o}/${i}.png`})}return n}_startDrag(e){var t,i;if(0!==e.button&&"touch"!==e.pointerType)return;const[o,r]=$d(this._center[0],this._center[1],this._zoom);this._dragging=!0,this._dragStart={x:e.clientX,y:e.clientY},this._dragCenterPx={x:o,y:r},null===(t=this._mapEl)||void 0===t||t.setPointerCapture(e.pointerId),null===(i=this._mapEl)||void 0===i||i.classList.add("dragging"),this._addPointerListeners()}_drag(e){this._dragging&&(this._panVisual={x:e.clientX-this._dragStart.x,y:e.clientY-this._dragStart.y},this._schedulePanTransform())}_schedulePanTransform(){void 0===this._panAnimationFrame&&(this._panAnimationFrame=window.requestAnimationFrame(()=>{this._panAnimationFrame=void 0,this._applyPanTransform()}))}_applyPanTransform(){var e;const t=null===(e=this.shadowRoot)||void 0===e?void 0:e.querySelector(".map-content");t&&(t.style.transform=`translate3d(${this._panVisual.x}px, ${this._panVisual.y}px, 0)`)}_endDrag(){var e;if(!this._dragging)return;this._dragging=!1,null===(e=this._mapEl)||void 0===e||e.classList.remove("dragging");const{x:t,y:i}=this._panVisual;if(0!==t||0!==i){const[e,o]=function(e,t,i){const o=_d*2**i,r=e/o*360-180,a=Math.PI-2*Math.PI*t/o;return[180/Math.PI*Math.atan(Math.sinh(a)),r]}(this._dragCenterPx.x-t,this._dragCenterPx.y-i,this._zoom);this._center=[e,o],this._panVisual={x:0,y:0},this._applyPanTransform()}this._removePointerListeners()}_addPointerListeners(){var e,t,i;null===(e=this._mapEl)||void 0===e||e.addEventListener("pointermove",this._onPointerMove),null===(t=this._mapEl)||void 0===t||t.addEventListener("pointerup",this._onPointerUp),null===(i=this._mapEl)||void 0===i||i.addEventListener("pointercancel",this._onPointerUp)}_removePointerListeners(){var e,t,i;null===(e=this._mapEl)||void 0===e||e.removeEventListener("pointermove",this._onPointerMove),null===(t=this._mapEl)||void 0===t||t.removeEventListener("pointerup",this._onPointerUp),null===(i=this._mapEl)||void 0===i||i.removeEventListener("pointercancel",this._onPointerUp)}_onWheel(e){e.preventDefault();const t=e.deltaY>0?-1:1;this._zoomBy(t)}render(){const e=[...this.contacts].sort((e,t)=>this._name(e).localeCompare(this._name(t),void 0,{sensitivity:"base"})),t=this._deviceSearch.trim().toLocaleLowerCase(),i=t?e.filter(e=>this._name(e).toLocaleLowerCase().includes(t)||e.pubkey_prefix.toLocaleLowerCase().includes(t)):e;return Nn(Po||(Po=Us`
       <div class="layout">
         <aside class="sidebar">
           <div class="sidebar-header">
             Devices
             <small>${0} with coordinates / ${0} total</small>
+          </div>
+          <div class="device-search">
+            <input
+              type="search"
+              placeholder="Search devices…"
+              aria-label="Search devices"
+              .value=${0}
+              @input=${0}>
           </div>
           <div class="node-list">
             ${0}
@@ -5521,23 +5529,23 @@ let e,t,i,o,r,a,s,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,C,S,M,A,z,D,R,O,I,T,F,E,N,
           <div class="attribution">© OpenStreetMap contributors</div>
         </main>
       </div>
-    `),this._nodes.length,e.length,e.length?e.map(e=>{const t=wd(e),i=this._selectedKey===e.public_key;return Nn(Lo||(Lo=Us`
+    `),this._nodes.length,e.length,this._deviceSearch,e=>{this._deviceSearch=e.target.value},i.length?i.map(e=>{const t=wd(e),i=this._selectedKey===e.public_key,o=this._activity(e);return Nn(Lo||(Lo=Us`
                     <button
                       class="node ${0} ${0}"
                       ?disabled=${0}
                       title=${0}
                       @click=${0}>
-                      <span class="marker-preview" aria-hidden="true"></span>
+                      <span class="activity ${0}" title=${0} aria-label=${0}>${0}</span>
                       <span>
                         <span class="node-name">${0}</span>
                         <span class="node-prefix">${0}</span>
                       </span>
                     </button>
-                  `),t?"":"no-location",i?"active":"",!t,t?`Focus on ${this._name(e)}`:"No coordinates available",()=>this._focus(e),this._name(e),e.pubkey_prefix||"")}):Nn(qo||(qo=Us`
+                  `),t?"":"no-location",i?"active":"",!t,t?`Focus on ${this._name(e)}`:"No coordinates available",()=>this._focus(e),o.className,o.title,o.title,o.label,this._name(e),e.pubkey_prefix||"")}):Nn(qo||(qo=Us`
                   <div style="padding:16px;color:var(--secondary-text-color);font-size:13px;">
-                    No MeshCore nodes found.
+                    ${0}
                   </div>
-                `)),this._startDrag,this._onWheel,e=>{e.preventDefault(),this._zoomBy(1)},this._tileTransition?Nn(Bo||(Bo=Us`
+                `),e.length?"No devices match the search.":"No MeshCore nodes found."),this._startDrag,this._onWheel,e=>{e.preventDefault(),this._zoomBy(1)},this._tileTransition?Nn(Bo||(Bo=Us`
               <div
                 class="tiles transition"
                 style="transform:scale(${0});">
@@ -5599,6 +5607,58 @@ let e,t,i,o,r,a,s,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,C,S,M,A,z,D,R,O,I,T,F,E,N,
       color: var(--secondary-text-color);
       font-size: 11px;
       font-weight: 400;
+    }
+
+    .device-search {
+      padding: 8px 10px;
+      border-bottom: 1px solid var(--divider-color, #e0e0e0);
+      flex-shrink: 0;
+    }
+
+    .device-search input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 7px;
+      background: var(--primary-background-color, #fafafa);
+      color: var(--primary-text-color);
+      font: inherit;
+      font-size: 13px;
+      outline: none;
+    }
+
+    .device-search input:focus {
+      border-color: var(--primary-color, #03a9f4);
+      box-shadow: 0 0 0 1px var(--primary-color, #03a9f4);
+    }
+
+    .activity {
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 8px;
+      font-weight: 700;
+      line-height: 1;
+      text-align: center;
+      box-sizing: border-box;
+      border: 1px solid rgba(255, 255, 255, .7);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, .22);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .activity.green { background: #2eaa55; }
+    .activity.yellow { background: #e0a800; }
+    .activity.red { background: #d64545; }
+    .activity.gray { background: #858585; }
+
+    .node.no-location .activity {
+      opacity: .55;
     }
 
     .node-list {
@@ -5811,7 +5871,7 @@ let e,t,i,o,r,a,s,n,l,d,c,p,h,u,g,m,v,f,y,b,_,x,w,$,k,C,S,M,A,z,D,R,O,I,T,F,E,N,
         display: none;
       }
     }
-  `),_d,_d),js([nl({type:Object})],kd.prototype,"hass",void 0),js([nl({type:Object})],kd.prototype,"config",void 0),js([nl({type:Array})],kd.prototype,"contacts",void 0),js([nl({type:Boolean})],kd.prototype,"narrow",void 0),js([ll()],kd.prototype,"_selectedKey",void 0),js([ll()],kd.prototype,"_center",void 0),js([ll()],kd.prototype,"_zoom",void 0),js([ll()],kd.prototype,"_mapSize",void 0),kd=js([rl("meshcore-map-page")],kd);let Cd=class extends il{constructor(){super(...arguments),this.selected=!1}render(){if(!this.contact)return Nn(Wo||(Wo=Us``));const e=this.contact,t=this._getTypeClass(e.type),{label:i,cls:o}=this._getCategoryBadge(e);return Nn(Go||(Go=Us`
+  `),_d,_d),js([nl({type:Object})],kd.prototype,"hass",void 0),js([nl({type:Object})],kd.prototype,"config",void 0),js([nl({type:Array})],kd.prototype,"contacts",void 0),js([nl({type:Boolean})],kd.prototype,"narrow",void 0),js([ll()],kd.prototype,"_selectedKey",void 0),js([ll()],kd.prototype,"_center",void 0),js([ll()],kd.prototype,"_zoom",void 0),js([ll()],kd.prototype,"_mapSize",void 0),js([ll()],kd.prototype,"_deviceSearch",void 0),kd=js([rl("meshcore-map-page")],kd);let Cd=class extends il{constructor(){super(...arguments),this.selected=!1}render(){if(!this.contact)return Nn(Wo||(Wo=Us``));const e=this.contact,t=this._getTypeClass(e.type),{label:i,cls:o}=this._getCategoryBadge(e);return Nn(Go||(Go=Us`
       <div class=${0}>
         <div class="contact-avatar ${0}">
           ${0}
