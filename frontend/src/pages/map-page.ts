@@ -743,12 +743,6 @@ export class MapPage extends LitElement {
     this._rawRadioRows = [row, ...this._rawRadioRows].slice(0, 100);
   }
 
-  private _graphPoint(hash: string): MessageMapPoint | undefined {
-    const contact = this._findContactByHash(hash);
-    if (!contact || !hasCoordinates(contact)) return undefined;
-    return { key: contact.public_key, name: this._name(contact), lat: Number(contact.adv_lat), lon: Number(contact.adv_lon) };
-  }
-
   private _recordFloodGraph(data: Record<string, unknown>, rx?: Record<string, unknown>) {
     const source = rx || data;
     const payloadType = Number(source.payload_type ?? data.payloadType);
