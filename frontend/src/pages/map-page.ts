@@ -12,6 +12,8 @@ interface MapNode {
 interface MessageMapPoint { key: string; name: string; lat: number; lon: number; }
 interface MessageMapRoute { points: MessageMapPoint[]; hashPath: string[]; snr?: number; rssi?: number; }
 interface MessageMapState { sender: string; target: string; text: string; channel?: string; pubkeyPrefix?: string; timestamp?: string; routes: MessageMapRoute[]; }
+interface MapTile { x: number; y: number; left: number; top: number; src: string; }
+interface TileTransition { tiles: MapTile[]; scale: number; }
 
 const TILE_SIZE = 256;
 const MIN_ZOOM = 2;
@@ -61,12 +63,13 @@ export class MapPage extends LitElement {
   private _dragStart = { x: 0, y: 0 };
   private _dragCenterPx = { x: 0, y: 0 };
   private _panVisual = { x: 0, y: 0 };
-  private _wheelZoomTimer?: number;
-  private _pendingZoomDelta = 0;
   private _activityTimer?: number;
   private _messageUnsubscribers: Array<() => void> = [];
   private _messageSubscriptionsActive = false;
   private _tilePreloadCache = new Map<string, HTMLImageElement>();
+  private _tileTransition?: TileTransition;
+  private _tileTransitionTimer?: number;
+  private _panAnimationFrame?: number;
 
   static styles = css`
     :host {
@@ -793,8 +796,8 @@ export class MapPage extends LitElement {
         routeHashes: this._pathHashes(rx),
         pathHashSize: rx.path_hash_size,
         pathLen: rx.path_len,
-        resolvedHops,
-      });    });
+      });
+    });
   }
 
   private _teardownMessageSubscriptions() {
@@ -835,7 +838,7 @@ export class MapPage extends LitElement {
     const routeName = String(data.route_typename || 'UNKNOWN');
     const pathHashes = this._pathHashes(data);
     const points: MessageMapPoint[] = [];
-    const resolvedHops = pathHashes.map(hash => {
+    pathHashes.forEach(hash => {
       const contact = this._findContactByHash(hash);
       const point = contact && hasCoordinates(contact) ? {
         key: contact.public_key,
@@ -844,13 +847,6 @@ export class MapPage extends LitElement {
         lon: contact.adv_lon,
       } : undefined;
       if (point && !points.some(existing => existing.key === point.key)) points.push(point);
-      return {
-        hash,
-        found: Boolean(contact),
-        hasCoordinates: Boolean(point),
-        name: contact ? this._name(contact) : undefined,
-        publicKey: contact?.public_key,
-      };
     });
 
     const pathLength = Number(data.path_len);
@@ -1176,7 +1172,7 @@ export class MapPage extends LitElement {
     }
   }
 
-  private _tileIndices(): Array<{ x: number; y: number; left: number; top: number; src: string }> {
+  private _tileIndices(): MapTile[] {
     if (!this._mapSize.width || !this._mapSize.height) return [];
     const [cx, cy] = project(this._center[0], this._center[1], this._zoom);
     const firstX = Math.floor((cx - this._mapSize.width / 2) / TILE_SIZE) - 1;
