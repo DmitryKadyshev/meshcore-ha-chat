@@ -929,6 +929,12 @@ export class MapPage extends LitElement {
           this._liveLastAdvert.set(advertKey.substring(0, 12), receivedMs);
         }
 
+        if (!isTextPacket) {
+          this._messageMap = null;
+          if (this._graphEdges.length) this._fitGraph();
+          return;
+        }
+
         const advertMap = this._buildAdvertMap({
           ...rx,
           timestamp: data.timestamp,
@@ -948,6 +954,12 @@ export class MapPage extends LitElement {
           pathHashSize: rx.path_hash_size,
           pathLen: rx.path_len,
         });
+        return;
+      }
+
+      if (!isTextPacket) {
+        this._messageMap = null;
+        if (this._graphEdges.length) this._fitGraph();
         return;
       }
 
