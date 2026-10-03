@@ -43,8 +43,15 @@ jobs:
       - name: Build bundle
         run: npm run build
 
+      - name: Run lint
+        run: npm run lint
+
       - name: Run tests
         run: npm test
+
+      - name: Verify build identity
+        run: |
+          grep -Eq 'MESHCORE-CHAT.{0,120}[0-9a-f]{40}' ../custom_components/meshcore_chat/meshcore-chat-panel.js
 
       - name: Commit generated bundle
         if: github.event_name == 'push'
