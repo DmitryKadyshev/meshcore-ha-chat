@@ -775,7 +775,10 @@ export class MapPage extends LitElement {
         ? payload as Record<string, unknown>
         : undefined;
 
-      const payloadTypeName = String(rx?.payload_typename || '').replace(/^EventType\\./i, '').toUpperCase();\n      if (eventType === 'NO_MORE_MSGS' || eventType === 'BATTERY' || payloadTypeName === 'NO_MORE_MSGS' || payloadTypeName === 'BATTERY') return;\n\n      // Log every raw event type so the browser console shows exactly what
+      const payloadTypeName = String(rx?.payload_typename || '').replace(/^EventType\./i, '').toUpperCase();
+      if (eventType === 'NO_MORE_MSGS' || eventType === 'BATTERY' || payloadTypeName === 'NO_MORE_MSGS' || payloadTypeName === 'BATTERY') return;
+
+      // Log every raw event type so the browser console shows exactly what
       // meshcore-ha is delivering to the panel. Advert-specific details are
       // logged separately below.
       this._recordRawRadioEvent(data, rx);
