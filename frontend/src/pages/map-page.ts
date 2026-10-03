@@ -704,11 +704,6 @@ export class MapPage extends LitElement {
     };
     this._rawRadioRows = [row, ...this._rawRadioRows].slice(0, 100);
   }
-    console.debug('[MeshCore Chat]', kind, {
-      event: data,
-      ...extra,
-    });
-  }
 
   private _setupMessageSubscriptions() {
     this._teardownMessageSubscriptions();
