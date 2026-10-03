@@ -70,6 +70,8 @@ export class MapPage extends LitElement {
   private _tileTransition?: TileTransition;
   private _tileTransitionTimer?: number;
   private _panAnimationFrame?: number;
+  /** Reception time of the latest advert heard for each node, keyed by public-key prefix. */
+  private _liveLastAdvert = new Map<string, number>();
 
   static styles = css`
     :host {
@@ -606,7 +608,12 @@ export class MapPage extends LitElement {
     // Keep the map activity indicator consistent with Nodes → Last Heard.
     // The Nodes page displays Contact.last_advert, so the map must use the
     // same timestamp rather than the local contact-store lastmod value.
-    const timestamp = Number(contact.last_advert);
+    const publicKey = String(contact.public_key || '').toLowerCase();
+    const prefix = String(contact.pubkey_prefix || '').toLowerCase();
+    const liveTimestamp = [publicKey, prefix]
+      .map(key => key ? this._liveLastAdvert.get(key) || 0 : 0)
+      .reduce((max, value) => Math.max(max, value), 0);
+    const timestamp = Math.max(Number(contact.last_advert) || 0, liveTimestamp);
     if (!Number.isFinite(timestamp) || timestamp <= 0) {
       return { className: 'gray', label: '—', title: 'No activity timestamp' };
     }
@@ -649,7 +656,10 @@ export class MapPage extends LitElement {
   private _eventBelongsToDevice(data: Record<string, unknown>): boolean {
     const prefix = this.devicePrefix.trim().toLowerCase().replace(/[^0-9a-f]/g, '').substring(0, 6);
     if (!prefix) return true;
+    const entryId = String(data.entry_id || '');
+    if (this.config?.entry_id && entryId) return entryId === this.config.entry_id;
     const entityId = String(data.entity_id || '').toLowerCase();
+    if (!entityId) return true;
     return entityId.includes(`meshcore_${prefix}_`);
   }
 
@@ -752,6 +762,17 @@ export class MapPage extends LitElement {
 
       const payloadType = Number(rx.payload_type);
       if (payloadType === 4) {
+        // A PUSH/advert packet is authoritative proof that this node was
+        // heard now. Keep that reception time locally so the sidebar does
+        // not lag behind Nodes until the next full contact sync.
+        const advertKey = String(rx.adv_key || '').toLowerCase();
+        const receivedAt = Number(rx.recv_time || data.timestamp || Date.now());
+        const receivedMs = receivedAt > 10_000_000_000 ? receivedAt : receivedAt * 1000;
+        if (advertKey && Number.isFinite(receivedMs) && receivedMs > 0) {
+          this._liveLastAdvert.set(advertKey, receivedMs);
+          this._liveLastAdvert.set(advertKey.substring(0, 12), receivedMs);
+        }
+
         const advertMap = this._buildAdvertMap({
           ...rx,
           timestamp: data.timestamp,
