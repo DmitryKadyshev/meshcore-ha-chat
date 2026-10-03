@@ -14,6 +14,10 @@ interface MessageMapRoute { points: MessageMapPoint[]; hashPath: string[]; snr?:
 interface MessageMapState { sender: string; target: string; text: string; channel?: string; pubkeyPrefix?: string; timestamp?: string; routes: MessageMapRoute[]; }
 interface MapTile { x: number; y: number; left: number; top: number; src: string; }
 interface TileTransition { tiles: MapTile[]; scale: number; }
+interface RawRadioRow {
+  id: number; time: string; type: string; route: string; path: string;
+  snr: string; rssi: string; noise: string; telemetry: string;
+}
 
 const TILE_SIZE = 256;
 const MIN_ZOOM = 2;
@@ -56,6 +60,8 @@ export class MapPage extends LitElement {
   @state() private _activityNow = Date.now();
   @state() private _showMessage = false;
   @state() private _messageMap: MessageMapState | null = null;
+  @state() private _rawRadioRows: RawRadioRow[] = [];
+  private _rawRadioRowId = 0;
 
   private _mapEl?: HTMLElement;
   private _resizeObserver?: ResizeObserver;
@@ -217,6 +223,15 @@ export class MapPage extends LitElement {
     }
     .message-toggle input { width: 17px; height: 17px; margin: 0; accent-color: var(--primary-color, #03a9f4); }
     .message-toggle small { display: block; margin: 3px 0 0 26px; color: var(--secondary-text-color); font-size: 10px; }
+    .map-area { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+    .radio-table { flex: 0 0 25%; min-height: 120px; overflow: auto; border-top: 1px solid var(--divider-color, #e0e0e0); background: var(--card-background-color, #fff); }
+    .radio-table table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
+    .radio-table th { position: sticky; top: 0; z-index: 1; padding: 6px 8px; text-align: left; background: var(--secondary-background-color, #f5f5f5); color: var(--secondary-text-color); border-bottom: 1px solid var(--divider-color, #e0e0e0); font-weight: 600; }
+    .radio-table td { padding: 5px 8px; border-bottom: 1px solid var(--divider-color, #e0e0e0); color: var(--primary-text-color); vertical-align: top; }
+    .radio-table tr.latest td { background: rgba(3, 169, 244, .08); }
+    .radio-table .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .radio-table .muted { color: var(--secondary-text-color); }
+    .radio-table-empty { padding: 12px; color: var(--secondary-text-color); font-size: 12px; }
 
     .node-list {
       overflow-y: auto;
@@ -655,6 +670,34 @@ export class MapPage extends LitElement {
   }
 
   private _debugRadioEvent(kind: string, data: Record<string, unknown>, extra?: Record<string, unknown>) {
+  private _rawNumber(value: unknown, suffix = ''): string {
+    if (value === undefined || value === null || value === '') return '—';
+    const number = Number(value);
+    return Number.isFinite(number) ? String(number) + suffix : String(value);
+  }
+
+  private _recordRawRadioEvent(data: Record<string, unknown>, rx?: Record<string, unknown>) {
+    const payload = rx || (data.payload && typeof data.payload === 'object' ? data.payload as Record<string, unknown> : undefined);
+    const source = payload || data;
+    const hashes = payload ? this._pathHashes(payload) : [];
+    const type = String(source.payload_typename || source.payload_type || data.event_type || 'UNKNOWN').replace(/^EventType\./, '');
+    const route = String(source.route_typename || '—');
+    const snr = source.snr; const rssi = source.rssi;
+    const noise = source.noise ?? source.noise_floor ?? source.noise_dbm;
+    const telemetryKeys = /^(freq|frequency|bandwidth|bw|sf|spreading_factor|coding_rate|cr|tx_power|channel|payload_length|packet_len|pkt_hash|header)$/i;
+    const telemetryEntries = Object.entries(source).filter(([key, value]) => value !== undefined && value !== null && value !== '' && telemetryKeys.test(key)).map(([key, value]) => key + '=' + String(value));
+    const timestamp = Number(data.timestamp ?? source.recv_time);
+    const date = Number.isFinite(timestamp) ? new Date(timestamp < 10000000000 ? timestamp * 1000 : timestamp) : new Date();
+    const row: RawRadioRow = {
+      id: ++this._rawRadioRowId, time: date.toLocaleTimeString(), type, route,
+      path: hashes.length ? hashes.join(' → ') : '—',
+      snr: this._rawNumber(snr, snr !== undefined ? ' dB' : ''),
+      rssi: this._rawNumber(rssi, rssi !== undefined ? ' dBm' : ''),
+      noise: this._rawNumber(noise, noise !== undefined ? ' dBm' : ''),
+      telemetry: telemetryEntries.length ? telemetryEntries.join(' · ') : '—',
+    };
+    this._rawRadioRows = [row, ...this._rawRadioRows].slice(0, 100);
+  }
     console.debug('[MeshCore Chat]', kind, {
       event: data,
       ...extra,
@@ -733,6 +776,8 @@ export class MapPage extends LitElement {
       // Log every raw event type so the browser console shows exactly what
       // meshcore-ha is delivering to the panel. Advert-specific details are
       // logged separately below.
+      this._recordRawRadioEvent(data, rx);
+
       this._debugRadioEvent('RAW_EVENT received', data, {
         eventType,
         payloadType: rx?.payload_type,
@@ -1438,6 +1483,7 @@ export class MapPage extends LitElement {
           </div>
         </aside>
 
+        <div class="map-area">
         <main
           class="map"
           @pointerdown=${this._startDrag}
@@ -1587,6 +1633,23 @@ export class MapPage extends LitElement {
 
           <div class="attribution">© OpenStreetMap contributors</div>
         </main>
+        <section class="radio-table" aria-label="MeshCore RAW_EVENT radio telemetry">
+          ${this._rawRadioRows.length ? html`
+            <table>
+              <thead><tr><th>Время</th><th>Тип</th><th>Маршрут</th><th>Путь</th><th>SNR</th><th>RSSI</th><th>Шум</th><th>Радио / пакет</th></tr></thead>
+              <tbody>
+                ${this._rawRadioRows.map((row, index) => html`
+                  <tr class=${index === 0 ? 'latest' : ''}>
+                    <td>${row.time}</td><td>${row.type}</td><td>${row.route}</td><td class="path">${row.path}</td>
+                    <td>${row.snr}</td><td>${row.rssi}</td><td>${row.noise}</td>
+                    <td class=${row.telemetry === '—' ? 'muted' : ''}>${row.telemetry}</td>
+                  </tr>
+                `)}
+              </tbody>
+            </table>
+          ` : html`<div class="radio-table-empty">Ожидание RAW_EVENT…</div>`}
+        </section>
+        </div>
       </div>
     `;
   }
