@@ -584,17 +584,6 @@ export class MapPage extends LitElement {
     this._fitAll();
   }
 
-  protected updated(changed: Map<string, unknown>) {
-    if (changed.has('hass') || changed.has('devicePrefix')) this._setupMessageSubscriptions();
-    this._applyPanTransform();
-    if (changed.has('contacts')) {
-      const hadSelected = this._selectedKey && this.contacts.some(
-        c => c.public_key === this._selectedKey && hasCoordinates(c),
-      );
-      if (!hadSelected) this._selectedKey = null;
-      this._fitAll();
-    }
-  }
 
   private get _nodes(): MapNode[] {
     return this.contacts
@@ -826,11 +815,25 @@ export class MapPage extends LitElement {
 
   protected updated(changedProperties: PropertyValues) {
     super.updated(changedProperties);
-    if (changedProperties.has('contacts') && this._showMessage && this._latestRadioRx) {
-      const packetMap = this._buildPacketMap(this._latestRadioRx);
-      if (packetMap.routes.length || !this._messageMap?.routes.length) {
-        this._messageMap = packetMap;
-        this._fitMessage();
+    if (changedProperties.has('hass') || changedProperties.has('devicePrefix')) {
+      this._setupMessageSubscriptions();
+    }
+    this._applyPanTransform();
+
+    if (changedProperties.has('contacts')) {
+      const hadSelected = this._selectedKey && this.contacts.some(
+        c => c.public_key === this._selectedKey && hasCoordinates(c),
+      );
+      if (!hadSelected) this._selectedKey = null;
+
+      if (this._showMessage && this._latestRadioRx) {
+        const packetMap = this._buildPacketMap(this._latestRadioRx);
+        if (packetMap.routes.length || !this._messageMap?.routes.length) {
+          this._messageMap = packetMap;
+          this._fitMessage();
+        }
+      } else {
+        this._fitAll();
       }
     }
   }
@@ -1385,6 +1388,9 @@ export class MapPage extends LitElement {
                     this._messageMap = null;
                     this._selectedKey = null;
                     this._fitAll();
+                  } else if (this._latestRadioRx) {
+                    this._messageMap = this._buildPacketMap(this._latestRadioRx);
+                    this._fitMessage();
                   } else {
                     this._fitMessage();
                   }
