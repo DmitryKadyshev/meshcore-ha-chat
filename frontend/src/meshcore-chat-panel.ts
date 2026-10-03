@@ -864,7 +864,7 @@ export class MeshCorePanel extends LitElement {
           <meshcore-chat-page
             .hass=${this.hass}
             .config=${this._config}
-            .conversations=${[...this._channels, ...this._contacts.filter(c => c.added_to_node)]}
+            .conversations=${[...this._channels, ...this._contacts]}
             .unread=${this._unread}
             .selectedId=${this._pendingChatTarget}
             .narrow=${this.narrow}
