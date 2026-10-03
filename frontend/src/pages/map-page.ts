@@ -864,7 +864,7 @@ export class MapPage extends LitElement {
       // meshcore-ha is delivering to the panel. Advert-specific details are
       // logged separately below.
       this._recordRawRadioEvent(data, rx);
-      if (rx) this._recordFloodGraph(rx);
+      if (rx) this._recordFloodGraph(data, rx);
 
       this._debugRadioEvent('RAW_EVENT received', data, {
         eventType,
@@ -952,6 +952,10 @@ export class MapPage extends LitElement {
       this._setupMessageSubscriptions();
     }
     this._applyPanTransform();
+
+    if (changedProperties.has('_graphEdges')) {
+      this._startGraphAnimation();
+    }
 
     if (changedProperties.has('contacts')) {
       const hadSelected = this._selectedKey && this.contacts.some(
@@ -1594,7 +1598,7 @@ export class MapPage extends LitElement {
               `)}
             </div>
 
-            ${!this._showMessage && this._graphEdges.length ? html`
+            ${this._graphEdges.length ? html`
               <svg class="graph-layer" aria-hidden="true" width="100%" height="100%" viewBox=${`0 0 ${Math.max(1, this._mapSize.width)} ${Math.max(1, this._mapSize.height)}`} preserveAspectRatio="none">
                 ${this._graphEdges.map(edge => {
                   const age = Date.now() - edge.lastSeen;
