@@ -72,6 +72,8 @@ export class MapPage extends LitElement {
   private _panAnimationFrame?: number;
   /** Reception time of the latest advert heard for each node, keyed by public-key prefix. */
   private _liveLastAdvert = new Map<string, number>();
+  /** Keep the raw latest radio packet so a contact refresh can resolve its path later. */
+  private _latestRadioRx: Record<string, unknown> | null = null;
 
   static styles = css`
     :host {
@@ -760,6 +762,7 @@ export class MapPage extends LitElement {
 
       if (!this._showMessage || eventType !== 'RX_LOG_DATA' || !rx) return;
 
+      this._latestRadioRx = { ...rx, timestamp: data.timestamp };
       const payloadType = Number(rx.payload_type);
       if (payloadType === 4) {
         // A PUSH/advert packet is authoritative proof that this node was
@@ -821,6 +824,17 @@ export class MapPage extends LitElement {
     });
   }
 
+  protected updated(changedProperties: Map<string, unknown>) {
+    super.updated(changedProperties);
+    if (changedProperties.has('contacts') && this._showMessage && this._latestRadioRx) {
+      const packetMap = this._buildPacketMap(this._latestRadioRx);
+      if (packetMap.routes.length || !this._messageMap?.routes.length) {
+        this._messageMap = packetMap;
+        this._fitMessage();
+      }
+    }
+  }
+
   private _teardownMessageSubscriptions() {
     this._messageUnsubscribers.forEach(unsubscribe => { try { unsubscribe(); } catch (_) {} });
     this._messageUnsubscribers = [];
@@ -830,10 +844,12 @@ export class MapPage extends LitElement {
     const normalized = hash.toLowerCase().replace(/[^0-9a-f]/g, '');
     if (!normalized) return undefined;
 
+    const normalizeKey = (value: unknown) =>
+      String(value || '').toLowerCase().replace(/[^0-9a-f]/g, '');
     const matches = this.contacts.filter(contact => {
-      const key = String(contact.public_key || '').toLowerCase();
-      const prefix = String(contact.pubkey_prefix || '').toLowerCase();
-      // MeshCore path IDs are the first 1–3 bytes of a node public key.
+      const key = normalizeKey(contact.public_key);
+      const prefix = normalizeKey(contact.pubkey_prefix);
+      // MeshCore path IDs are the first 1–3 bytes of the node public key.
       return key.startsWith(normalized) || prefix.startsWith(normalized);
     });
     if (!matches.length) return undefined;
@@ -859,15 +875,19 @@ export class MapPage extends LitElement {
     const routeName = String(data.route_typename || 'UNKNOWN');
     const pathHashes = this._pathHashes(data);
     const points: MessageMapPoint[] = [];
+    // Resolve every hash independently and append in exactly the packet order.
+    // Do not sort by contact activity/name: the radio path is the route.
     pathHashes.forEach(hash => {
       const contact = this._findContactByHash(hash);
-      const point = contact && hasCoordinates(contact) ? {
+      if (!contact || !hasCoordinates(contact)) return;
+      const point: MessageMapPoint = {
         key: contact.public_key,
         name: this._name(contact),
-        lat: contact.adv_lat,
-        lon: contact.adv_lon,
-      } : undefined;
-      if (point && !points.some(existing => existing.key === point.key)) points.push(point);
+        lat: Number(contact.adv_lat),
+        lon: Number(contact.adv_lon),
+      };
+      // Keep the first occurrence of a node but never reorder the path.
+      if (!points.some(existing => existing.key === point.key)) points.push(point);
     });
 
     const pathLength = Number(data.path_len);
