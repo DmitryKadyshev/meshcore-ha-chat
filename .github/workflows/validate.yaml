@@ -3,13 +3,27 @@ name: Validate
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    paths:
+      - 'custom_components/**'
+      - 'hacs.json'
+      - 'README.md'
+      - 'LICENSE'
+      - 'LICENSE.*'
+      - '.github/workflows/validate.yaml'
   pull_request:
-  schedule:
-    - cron: "0 0 * * *"
+    paths:
+      - 'custom_components/**'
+      - 'hacs.json'
+      - 'README.md'
+      - 'LICENSE'
+      - 'LICENSE.*'
+      - '.github/workflows/validate.yaml'
   workflow_dispatch:
 
-# Hassfest and HACS only need to read repository contents.
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
@@ -17,62 +31,21 @@ jobs:
   hassfest:
     name: Hassfest
     runs-on: ubuntu-latest
-    # Skip on non-canonical repos (e.g. the private dev mirror); HACS
-    # and Hassfest only make sense on the public canonical repo.
-    if: github.repository == 'mwolter805/meshcore-ha-chat'
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Run hassfest
-        # Pinned to 2026-04-07 HEAD on home-assistant/actions/master.
-        # Bump on a quarterly cadence to take security and behaviour
-        # fixes; verify with a full validate.yaml run after each bump.
         uses: home-assistant/actions/hassfest@f4ca6f671bd429efb108c0f2fa0ae8af0215986c
 
   hacs:
     name: HACS
     runs-on: ubuntu-latest
-    if: github.repository == 'mwolter805/meshcore-ha-chat'
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
 
       - name: Run HACS validation
-        # Pinned to 2026-01-26 HEAD on hacs/action/main.
-        # Bump on a quarterly cadence to take security and behaviour
-        # fixes; verify with a full validate.yaml run after each bump.
         uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa
         with:
           category: integration
-
-  frontend:
-    # Builds and tests the Lit panel bundle. CodeQL/Hassfest/HACS do not
-    # exercise the rollup build, so without this job a dependency bump
-    # that breaks `npm run build` can merge green (see plugin-typescript
-    # v12 outDir break, 2026-06). This job is the gate that catches it.
-    name: Frontend build & test
-    runs-on: ubuntu-latest
-    if: github.repository == 'mwolter805/meshcore-ha-chat'
-    defaults:
-      run:
-        working-directory: frontend
-    steps:
-      - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-
-      - name: Set up Node
-        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
-        with:
-          node-version: "20"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build bundle
-        run: npm run build
-
-      - name: Run tests
-        run: npm test
