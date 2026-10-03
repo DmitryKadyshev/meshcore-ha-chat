@@ -745,22 +745,22 @@ export class MapPage extends LitElement {
       if (!this._showMessage || eventType !== 'RX_LOG_DATA' || !rx) return;
 
       const payloadType = Number(rx.payload_type);
-      if (payloadType === 8 || payloadType === 2) {
-        const pathMap = this._buildPathMap({
+      if (payloadType === 4) {
+        const advertMap = this._buildAdvertMap({
           ...rx,
           timestamp: data.timestamp,
         });
-        this._messageMap = pathMap;
+        this._messageMap = advertMap;
         this._fitMessage();
 
-        this._debugRadioEvent('PATH map built', data, {
+        this._debugRadioEvent('ADVERT map built', data, {
           payloadType,
-          name: pathMap.sender,
-          target: pathMap.target,
-          text: pathMap.text,
-          timestamp: pathMap.timestamp,
-          routes: pathMap.routes,
-          routeCount: pathMap.routes.length,
+          name: advertMap.sender,
+          target: advertMap.target,
+          text: advertMap.text,
+          timestamp: advertMap.timestamp,
+          routes: advertMap.routes,
+          routeCount: advertMap.routes.length,
           routeHashes: this._pathHashes(rx),
           pathHashSize: rx.path_hash_size,
           pathLen: rx.path_len,
@@ -768,27 +768,29 @@ export class MapPage extends LitElement {
         return;
       }
 
-      if (payloadType !== 4) return;
-
-      const advertMap = this._buildAdvertMap({
+      // All other defined MeshCore payload types are rendered as radio
+      // packet events. If a packet has a path, draw the resolvable hops;
+      // if path_len=0 (for example DIRECT RESPONSE), keep the event visible.
+      const packetMap = this._buildPacketMap({
         ...rx,
         timestamp: data.timestamp,
       });
-      this._messageMap = advertMap;
+      this._messageMap = packetMap;
       this._fitMessage();
 
-      this._debugRadioEvent('ADVERT map built', data, {
-        name: advertMap.sender,
-        target: advertMap.target,
-        text: advertMap.text,
-        timestamp: advertMap.timestamp,
-        routes: advertMap.routes,
-        routeCount: advertMap.routes.length,
+      this._debugRadioEvent('PACKET map built', data, {
+        payloadType,
+        payloadName: rx.payload_typename,
+        name: packetMap.sender,
+        target: packetMap.target,
+        text: packetMap.text,
+        timestamp: packetMap.timestamp,
+        routes: packetMap.routes,
+        routeCount: packetMap.routes.length,
         routeHashes: this._pathHashes(rx),
         pathHashSize: rx.path_hash_size,
         pathLen: rx.path_len,
-      });
-    });
+      });    });
   }
 
   private _teardownMessageSubscriptions() {
@@ -873,6 +875,77 @@ export class MapPage extends LitElement {
       hashes.push(path.slice(i, i + hashWidth));
     }
     return hashes;
+  }
+
+  private _buildPacketMap(data: Record<string, unknown>): MessageMapState {
+    const payloadType = Number(data.payload_type);
+    const payloadName = String(data.payload_typename || this._payloadTypeName(payloadType));
+    const routeName = String(data.route_typename || 'UNKNOWN');
+    const pathHashes = this._pathHashes(data);
+    const points: MessageMapPoint[] = [];
+
+    for (const hash of pathHashes) {
+      const contact = this._findContactByHash(hash);
+      if (!contact || !hasCoordinates(contact)) continue;
+      const point: MessageMapPoint = {
+        key: contact.public_key,
+        name: this._name(contact),
+        lat: contact.adv_lat,
+        lon: contact.adv_lon,
+      };
+      if (!points.some(existing => existing.key === point.key)) points.push(point);
+    }
+
+    const pathLength = Number(data.path_len);
+    const hashSize = Number(data.path_hash_size);
+    const route: MessageMapRoute[] = points.length
+      ? [{
+          points,
+          hashPath: pathHashes,
+          snr: Number.isFinite(Number(data.snr)) ? Number(data.snr) : undefined,
+          rssi: Number.isFinite(Number(data.rssi)) ? Number(data.rssi) : undefined,
+        }]
+      : [];
+
+    const pathDetails = pathHashes.length
+      ? 'path ' + pathHashes.join(' → ')
+      : Number.isFinite(pathLength) ? 'path 0 hops' : '';
+    const details = [
+      routeName,
+      pathDetails,
+      hashSize ? 'hash ' + hashSize + 'B' : '',
+      data.snr !== undefined ? 'SNR ' + data.snr + ' dB' : '',
+      data.rssi !== undefined ? 'RSSI ' + data.rssi + ' dBm' : '',
+    ].filter(Boolean).join(' · ');
+
+    return {
+      sender: 'MeshCore ' + payloadName,
+      target: payloadName,
+      text: details || 'MeshCore packet received',
+      timestamp: data.recv_time || data.timestamp
+        ? String(data.recv_time || data.timestamp)
+        : undefined,
+      routes: route,
+    };
+  }
+
+  private _payloadTypeName(payloadType: number): string {
+    const names: Record<number, string> = {
+      0: 'REQ',
+      1: 'RESPONSE',
+      2: 'TEXT_MSG',
+      3: 'ACK',
+      4: 'ADVERT',
+      5: 'GRP_TXT',
+      6: 'GRP_DATA',
+      7: 'ANON_REQ',
+      8: 'PATH',
+      9: 'TRACE',
+      10: 'MULTIPART',
+      11: 'CONTROL',
+      15: 'RAW_CUSTOM',
+    };
+    return names[payloadType] || 'UNKNOWN (' + payloadType + ')';
   }
 
   private _buildPathMap(data: Record<string, unknown>): MessageMapState {
