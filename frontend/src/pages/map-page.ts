@@ -393,7 +393,10 @@ export class MapPage extends LitElement {
     }
     .graph-edge { fill: none; stroke: rgba(3,169,244,.55); stroke-width: 2; stroke-linecap: round; transition: opacity 300ms ease, stroke-width 300ms ease; }
     .graph-edge.active { stroke: rgba(3,169,244,.9); }
-    .graph-node { fill: var(--card-background-color,#fff); stroke: rgba(3,169,244,.75); stroke-width: 2; }
+    .graph-node { fill: var(--card-background-color,#fff); stroke: rgba(3,169,244,.9); stroke-width: 2; }
+    .graph-arrow { fill: rgba(3,169,244,.9); }
+    .graph-node-group { pointer-events: none; }
+    .graph-node-label { fill: var(--primary-text-color,#222); font-size: 11px; font-weight: 600; paint-order: stroke; stroke: var(--card-background-color,#fff); stroke-width: 3px; stroke-linejoin: round; }
     .graph-packet { fill: #fff; stroke: rgba(3,169,244,.98); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(3,169,244,.9)); }
 
 .message-route-layer {
@@ -742,58 +745,57 @@ export class MapPage extends LitElement {
 
   private _recordFloodGraph(data: Record<string, unknown>, rx?: Record<string, unknown>) {
     const source = rx || data;
-    const routeType = String(source.route_typename ?? data.routeType ?? '').replace(/^EventType\./i, '').toUpperCase();
-    if (routeType !== 'FLOOD') return;
+    const payloadType = Number(source.payload_type ?? data.payloadType);
+    const payloadName = String(source.payload_typename ?? data.payloadTypeName ?? '').replace(/^EventType\./i, '').toUpperCase();
+    // Text packets use the normal message route. Other FLOOD packets use the graph.
+    if (payloadType === 2 || payloadType === 5 || payloadName === 'TEXT_MSG' || payloadName === 'GRP_TXT') {
+      this._graphEdges = [];
+      return;
+    }
+    const routeType = String(source.route_typename ?? source.routeType ?? data.routeType ?? '').replace(/^EventType\./i, '').toUpperCase();
+    if (!['FLOOD', 'TC_FLOOD', 'TRANSPORT_FLOOD'].includes(routeType)) {
+      this._graphEdges = [];
+      return;
+    }
     const sourceHashes = this._pathHashes(source);
     const hashes = sourceHashes.length ? sourceHashes : this._pathHashes(data);
-    if (hashes.length < 2) return;
-
-    // Path IDs are prefixes of node public keys. Only connect adjacent hops
-    // when both IDs resolve to located contacts; never bridge an unknown hop.
+    if (hashes.length < 2) { this._graphEdges = []; return; }
     const hops = hashes.map(hash => ({ hash, point: this._graphPoint(hash) }));
     const now = performance.now();
     const wallNow = Date.now();
-    const next = [...this._graphEdges];
-
+    const snr = Number(source.snr ?? data.snr);
+    const rssi = Number(source.rssi ?? data.rssi);
+    const edges: GraphEdge[] = [];
     for (let i = 0; i < hops.length - 1; i += 1) {
-      const from = hops[i].point;
-      const to = hops[i + 1].point;
+      const from = hops[i].point; const to = hops[i + 1].point;
       if (!from || !to || from.key === to.key) continue;
-      const id = [from.key, to.key].sort().join('|');
-      const edge = next.find(item => item.id === id);
-      const snr = Number(source.snr ?? data.snr);
-      const rssi = Number(source.rssi ?? data.rssi);
-
-      if (edge) {
-        edge.from = from;
-        edge.to = to;
-        edge.count += 1;
-        edge.lastSeen = wallNow;
-        edge.flowStartedAt = now;
-        if (Number.isFinite(snr)) edge.snr = snr;
-        if (Number.isFinite(rssi)) edge.rssi = rssi;
-      } else {
-        next.push({
-          id,
-          from,
-          to,
-          count: 1,
-          lastSeen: wallNow,
-          flowStartedAt: now,
-          snr: Number.isFinite(snr) ? snr : undefined,
-          rssi: Number.isFinite(rssi) ? rssi : undefined,
-        });
-      }
+      edges.push({ id: [from.key, to.key].sort().join('|'), from, to, count: 1, lastSeen: wallNow, flowStartedAt: now, snr: Number.isFinite(snr) ? snr : undefined, rssi: Number.isFinite(rssi) ? rssi : undefined });
     }
+    this._graphEdges = edges;
+    if (edges.length) this._startGraphAnimation();
+  }
 
-    this._graphEdges = next.filter(edge => wallNow - edge.lastSeen < MapPage.GRAPH_TTL_MS);
-    this._startGraphAnimation();
+  private _fitGraph() {
+    const unique = new Map(this._graphEdges.flatMap(edge => [edge.from, edge.to]).map(point => [point.key, point]));
+    const nodes = [...unique.values()];
+    if (nodes.length < 2) return;
+    const minLat = Math.min(...nodes.map(point => point.lat));
+    const maxLat = Math.max(...nodes.map(point => point.lat));
+    const minLon = Math.min(...nodes.map(point => point.lon));
+    const maxLon = Math.max(...nodes.map(point => point.lon));
+    this._center = [(minLat + maxLat) / 2, (minLon + maxLon) / 2];
+    const width = Math.max(this._mapSize.width - 140, 320);
+    const height = Math.max(this._mapSize.height - 140, 240);
+    let zoom = MAX_ZOOM;
+    for (let z = MIN_ZOOM; z <= MAX_ZOOM; z += 1) {
+      const [x1, y1] = project(minLat, minLon, z); const [x2, y2] = project(maxLat, maxLon, z);
+      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { zoom = z; break; }
+    }
+    this._zoom = Math.max(MIN_ZOOM, zoom - 1);
   }
 
   private _startGraphAnimation() {
-    if (this._graphAnimationFrame === undefined) {
-      this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
-    }
+    if (this._graphAnimationFrame === undefined) this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
   }
 
   private _animateGraph = (now: number) => {
@@ -801,28 +803,20 @@ export class MapPage extends LitElement {
     const live = this._graphEdges.filter(edge => Date.now() - edge.lastSeen < MapPage.GRAPH_TTL_MS);
     if (live.length !== this._graphEdges.length) this._graphEdges = live;
     if (!live.length) return;
-
     const layer = this.shadowRoot?.querySelector('.graph-layer');
-    if (!layer) {
-      this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
-      return;
-    }
-
+    if (!layer) { this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph); return; }
     for (const edge of live) {
       const key = edge.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-      const packet = layer.querySelector(`[data-graph-packet="${key}"]`) as SVGCircleElement | null;
+      const packet = layer.querySelector('[data-graph-packet="' + key + '"]') as SVGCircleElement | null;
       if (!packet) continue;
-      const start = this._mapPoint(edge.from.lat, edge.from.lon);
-      const end = this._mapPoint(edge.to.lat, edge.to.lon);
+      const start = this._mapPoint(edge.from.lat, edge.from.lon); const end = this._mapPoint(edge.to.lat, edge.to.lon);
       const duration = Math.max(900, Math.min(3200, 1400 + Math.hypot(end.left - start.left, end.top - start.top) * 2));
       const progress = ((now - edge.flowStartedAt) % duration) / duration;
       packet.setAttribute('cx', String(start.left + (end.left - start.left) * progress));
       packet.setAttribute('cy', String(start.top + (end.top - start.top) * progress));
     }
-
     this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
   };
-
   private _setupMessageSubscriptions() {
     this._teardownMessageSubscriptions();
     if (!this._messageSubscriptionsActive || !this.hass?.connection?.subscribeEvents) return;
@@ -899,7 +893,7 @@ export class MapPage extends LitElement {
       // meshcore-ha is delivering to the panel. Advert-specific details are
       // logged separately below.
       this._recordRawRadioEvent(data, rx);
-      if (rx) this._recordFloodGraph(data, rx);
+      if (this._showMessage && rx) this._recordFloodGraph(data, rx);
 
       this._debugRadioEvent('RAW_EVENT received', data, {
         eventType,
@@ -921,6 +915,8 @@ export class MapPage extends LitElement {
 
       this._latestRadioRx = { ...rx, timestamp: data.timestamp };
       const payloadType = Number(rx.payload_type);
+      const payloadTypeName = String(rx.payload_typename || '').replace(/^EventType\./i, '').toUpperCase();
+      const isTextPacket = payloadType === 2 || payloadType === 5 || payloadTypeName === 'TEXT_MSG' || payloadTypeName === 'GRP_TXT';
       if (payloadType === 4) {
         // A PUSH/advert packet is authoritative proof that this node was
         // heard now. Keep that reception time locally so the sidebar does
@@ -1561,7 +1557,8 @@ export class MapPage extends LitElement {
                     this._selectedKey = null;
                     this._fitAll();
                   } else if (this._latestRadioRx) {
-                    this._messageMap = this._buildPacketMap(this._latestRadioRx);
+                    if (!isTextPacket) { this._messageMap = null; if (this._graphEdges.length) this._fitGraph(); return; }
+      this._messageMap = this._buildPacketMap(this._latestRadioRx);
                     this._fitMessage();
                   } else {
                     this._fitMessage();
@@ -1634,7 +1631,7 @@ export class MapPage extends LitElement {
             </div>
 
             ${this._graphEdges.length ? html`
-              <svg class="graph-layer" aria-hidden="true" width="100%" height="100%" viewBox=${`0 0 ${Math.max(1, this._mapSize.width)} ${Math.max(1, this._mapSize.height)}`} preserveAspectRatio="none">
+              <svg class="graph-layer" aria-hidden="true" width="100%" height="100%" viewBox=${`0 0 ${Math.max(1, this._mapSize.width)} ${Math.max(1, this._mapSize.height)}`} preserveAspectRatio="none"><defs><marker id="graph-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,7 L7,3.5 z" class="graph-arrow"></path></marker></defs>
                 ${this._graphEdges.map(edge => {
                   const age = Date.now() - edge.lastSeen;
                   const opacity = Math.max(.08, 1 - age / MapPage.GRAPH_TTL_MS);
@@ -1642,8 +1639,9 @@ export class MapPage extends LitElement {
                   const from = this._mapPoint(edge.from.lat, edge.from.lon);
                   const to = this._mapPoint(edge.to.lat, edge.to.lon);
                   const key = edge.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-                  return html`<line class="graph-edge ${age < 15000 ? 'active' : ''}" x1=${from.left} y1=${from.top} x2=${to.left} y2=${to.top} style="opacity:${opacity};stroke-width:${width}px"></line><circle class="graph-packet" data-graph-packet=${key} cx=${from.left} cy=${from.top} r="4"></circle>`;
+                  return html`<line class="graph-edge ${age < 15000 ? 'active' : ''}" x1=${from.left} y1=${from.top} x2=${to.left} y2=${to.top} marker-end="url(#graph-arrow)" style="opacity:${opacity};stroke-width:${width}px"></line><circle class="graph-packet" data-graph-packet=${key} cx=${from.left} cy=${from.top} r="4"></circle>`;
                 })}
+                ${[...new Map(this._graphEdges.flatMap(edge => [edge.from, edge.to]).map(point => [point.key, point])).values()].map(point => { const pos = this._mapPoint(point.lat, point.lon); return html`<g class="graph-node-group"><circle class="graph-node" cx=${pos.left} cy=${pos.top} r="7"></circle><text class="graph-node-label" x=${pos.left + 10} y=${pos.top - 10}>${point.key.slice(0, 4)}</text></g>`; })}
               </svg>
             ` : nothing}
             ${this._showMessage
