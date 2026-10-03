@@ -743,7 +743,31 @@ export class MapPage extends LitElement {
       });
 
       if (!this._showMessage || eventType !== 'RX_LOG_DATA' || !rx) return;
-      if (Number(rx.payload_type) !== 4) return;
+
+      const payloadType = Number(rx.payload_type);
+      if (payloadType === 8) {
+        const pathMap = this._buildPathMap({
+          ...rx,
+          timestamp: data.timestamp,
+        });
+        this._messageMap = pathMap;
+        this._fitMessage();
+
+        this._debugRadioEvent('PATH map built', data, {
+          name: pathMap.sender,
+          target: pathMap.target,
+          text: pathMap.text,
+          timestamp: pathMap.timestamp,
+          routes: pathMap.routes,
+          routeCount: pathMap.routes.length,
+          routeHashes: this._pathHashes(rx),
+          pathHashSize: rx.path_hash_size,
+          pathLen: rx.path_len,
+        });
+        return;
+      }
+
+      if (payloadType !== 4) return;
 
       const advertMap = this._buildAdvertMap({
         ...rx,
@@ -848,6 +872,56 @@ export class MapPage extends LitElement {
       hashes.push(path.slice(i, i + hashWidth));
     }
     return hashes;
+  }
+
+  private _buildPathMap(data: Record<string, unknown>): MessageMapState {
+    const pathHashes = this._pathHashes(data);
+    const points: MessageMapPoint[] = [];
+
+    for (const hash of pathHashes) {
+      const contact = this._findContactByHash(hash);
+      if (!contact || !hasCoordinates(contact)) continue;
+      const point: MessageMapPoint = {
+        key: contact.public_key,
+        name: this._name(contact),
+        lat: contact.adv_lat,
+        lon: contact.adv_lon,
+      };
+      if (!points.some(existing => existing.key === point.key)) points.push(point);
+    }
+
+    const pathLength = Number(data.path_len);
+    const hashSize = Number(data.path_hash_size);
+    const routeName = String(data.route_typename || 'PATH');
+    const sender = 'MeshCore PATH';
+    const target = Number.isFinite(pathLength) && pathLength > 0
+      ? 'Path · ' + pathLength + ' hop' + (pathLength === 1 ? '' : 's')
+      : 'Path';
+    const details = [
+      routeName,
+      pathHashes.length ? 'hash ' + hashSize + 'B' : '',
+      data.snr !== undefined ? 'SNR ' + data.snr + ' dB' : '',
+      data.rssi !== undefined ? 'RSSI ' + data.rssi + ' dBm' : '',
+    ].filter(Boolean).join(' · ');
+
+    const route: MessageMapRoute[] = points.length
+      ? [{
+          points,
+          hashPath: pathHashes,
+          snr: Number.isFinite(Number(data.snr)) ? Number(data.snr) : undefined,
+          rssi: Number.isFinite(Number(data.rssi)) ? Number(data.rssi) : undefined,
+        }]
+      : [];
+
+    return {
+      sender,
+      target,
+      text: details || 'MeshCore path received',
+      timestamp: data.recv_time || data.timestamp
+        ? String(data.recv_time || data.timestamp)
+        : undefined,
+      routes: route,
+    };
   }
 
   private _buildAdvertMap(data: Record<string, unknown>): MessageMapState {
