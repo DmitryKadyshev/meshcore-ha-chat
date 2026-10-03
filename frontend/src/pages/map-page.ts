@@ -696,6 +696,19 @@ export class MapPage extends LitElement {
       });
       this._fitMessage();
     });
+    void subscribe('meshcore_raw_event', data => {
+      if (!this._showMessage) return;
+      if (String(data.event_type || '').toUpperCase() !== 'RX_LOG_DATA') return;
+      const payload = data.payload;
+      if (!payload || typeof payload !== 'object') return;
+      const rx = payload as Record<string, unknown>;
+      if (Number(rx.payload_type) !== 4) return;
+      this._messageMap = this._buildAdvertMap({
+        ...rx,
+        timestamp: data.timestamp,
+      });
+      this._fitMessage();
+    });
   }
 
   private _teardownMessageSubscriptions() {
@@ -727,23 +740,34 @@ export class MapPage extends LitElement {
   }
 
   private _pathHashes(rx: Record<string, unknown>): string[] {
-    // meshcore-ha puts path/path_hash_size at the top level of rx_log_data,
-    // but keep support for parsed/decrypted nested payloads as well.
+    // MeshCore routes encode each hop as a truncated public-key hash.
+    // The receiver's Path Hash Mode is carried as path_hash_size in RX_LOG_DATA:
+    // 1, 2 or 3 bytes. Never infer a different width when the radio supplied it.
     const nested = [
       rx,
       ...(rx.parsed && typeof rx.parsed === 'object' ? [rx.parsed as Record<string, unknown>] : []),
       ...(rx.decrypted && typeof rx.decrypted === 'object' ? [rx.decrypted as Record<string, unknown>] : []),
     ];
 
+    const explicitHashSize = nested
+      .map(item => Number(item.path_hash_size))
+      .find(value => Number.isFinite(value) && Number.isInteger(value) && value >= 1 && value <= 3);
+
+    const width = explicitHashSize ? explicitHashSize * 2 : 0;
+
+    // Prefer the decoded path_nodes only when their hashes match the radio's
+    // advertised width. Otherwise parse the raw path with that width.
     for (const source of nested) {
       const pathNodes = Array.isArray(source.path_nodes) ? source.path_nodes : null;
-      if (pathNodes?.length) {
-        return pathNodes
-          .map(node => typeof node === 'object' && node !== null
-            ? String((node as Record<string, unknown>).hash || '')
-            : String(node))
-          .map(value => value.replace(/[^0-9a-f]/gi, '').toLowerCase())
-          .filter(Boolean);
+      if (!pathNodes?.length) continue;
+      const hashes = pathNodes
+        .map(node => typeof node === 'object' && node !== null
+          ? String((node as Record<string, unknown>).hash || '')
+          : String(node))
+        .map(value => value.replace(/[^0-9a-f]/gi, '').toLowerCase())
+        .filter(Boolean);
+      if (hashes.length && (!width || hashes.every(hash => hash.length === width))) {
+        return hashes;
       }
     }
 
@@ -751,29 +775,92 @@ export class MapPage extends LitElement {
     const path = String(source?.path || '').replace(/[^0-9a-f]/gi, '').toLowerCase();
     if (!path) return [];
 
-    const explicitHashSize = nested
-      .map(item => Number(item.path_hash_size))
-      .find(value => Number.isFinite(value) && value >= 1 && value <= 3);
-
-    let hashSize = explicitHashSize || 0;
-    if (!hashSize) {
+    let hashWidth = width;
+    if (!hashWidth) {
       const pathLen = nested
         .map(item => Number(item.path_len))
         .find(value => Number.isFinite(value) && value > 0);
       if (pathLen && path.length % pathLen === 0) {
-        hashSize = path.length / pathLen / 2;
+        hashWidth = (path.length / pathLen);
       }
     }
-    if (!hashSize || !Number.isInteger(hashSize)) {
-      hashSize = path.length % 6 === 0 ? 3 : path.length % 4 === 0 ? 2 : 1;
+    if (!hashWidth || !Number.isInteger(hashWidth) || hashWidth < 2 || hashWidth > 6) {
+      hashWidth = path.length % 6 === 0 ? 6 : path.length % 4 === 0 ? 4 : 2;
     }
 
-    const width = hashSize * 2;
     const hashes: string[] = [];
-    for (let i = 0; i + width <= path.length; i += width) {
-      hashes.push(path.slice(i, i + width));
+    for (let i = 0; i + hashWidth <= path.length; i += hashWidth) {
+      hashes.push(path.slice(i, i + hashWidth));
     }
     return hashes;
+  }
+
+  private _buildAdvertMap(data: Record<string, unknown>): MessageMapState {
+    const name = String(data.adv_name || 'Unknown node');
+    const advType = Number(data.adv_type);
+    const typeName = advType === 2 ? 'Repeater'
+      : advType === 3 ? 'Room Server'
+      : advType === 4 ? 'Sensor'
+      : advType === 1 ? 'Chat node'
+      : 'Node';
+    const sender = name;
+    const target = `Advert · ${typeName}`;
+    const advKey = String(data.adv_key || '').toLowerCase();
+    const advLat = Number(data.adv_lat);
+    const advLon = Number(data.adv_lon);
+    const senderPoint: MessageMapPoint | undefined =
+      Number.isFinite(advLat) && Number.isFinite(advLon)
+        && Math.abs(advLat) <= 90 && Math.abs(advLon) <= 180
+        && !(advLat === 0 && advLon === 0)
+        ? {
+            key: advKey || `advert:${name}`,
+            name,
+            lat: advLat,
+            lon: advLon,
+          }
+        : undefined;
+
+    const pathHashes = this._pathHashes(data);
+    const points: MessageMapPoint[] = [];
+    if (senderPoint) points.push(senderPoint);
+    for (const hash of pathHashes) {
+      const contact = this._findContactByHash(hash);
+      if (!contact || !hasCoordinates(contact)) continue;
+      const point: MessageMapPoint = {
+        key: contact.public_key,
+        name: this._name(contact),
+        lat: contact.adv_lat,
+        lon: contact.adv_lon,
+      };
+      if (!points.some(existing => existing.key === point.key)) points.push(point);
+    }
+
+    const route: MessageMapRoute[] = points.length
+      ? [{
+          points,
+          hashPath: pathHashes,
+          snr: Number.isFinite(Number(data.snr)) ? Number(data.snr) : undefined,
+          rssi: Number.isFinite(Number(data.rssi)) ? Number(data.rssi) : undefined,
+        }]
+      : [];
+
+    const recvTime = data.recv_time || data.timestamp || data.adv_timestamp;
+    const keyPrefix = advKey ? advKey.substring(0, 12) : '';
+    const details = [
+      keyPrefix ? `key ${keyPrefix}` : '',
+      data.path_hash_size ? `hash ${Number(data.path_hash_size)}B` : '',
+      data.route_typename ? String(data.route_typename) : '',
+      data.snr !== undefined ? `SNR ${data.snr} dB` : '',
+      data.rssi !== undefined ? `RSSI ${data.rssi} dBm` : '',
+    ].filter(Boolean).join(' · ');
+
+    return {
+      sender,
+      target,
+      text: details || 'Node advertisement received',
+      timestamp: recvTime ? String(recvTime) : undefined,
+      routes: route,
+    };
   }
 
   private _buildMessageMap(data: Record<string, unknown>): MessageMapState {
@@ -1170,9 +1257,9 @@ export class MapPage extends LitElement {
                     this._fitMessage();
                   }
                 }}>
-              <span>Show message</span>
+              <span>Show latest radio event</span>
             </label>
-            <small>Hide nodes and show the latest message route</small>
+            <small>Hide nodes and show the latest message or Advert route</small>
           </div>
           <div class="sort-select">
             <select
