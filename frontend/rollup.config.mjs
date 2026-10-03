@@ -6,6 +6,7 @@ import { getBabelOutputPlugin } from '@rollup/plugin-babel';
 
 const dev = process.env.ROLLUP_WATCH === 'true';
 const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf-8'));
+const gitHash = process.env.GITHUB_SHA || process.env.GIT_COMMIT || 'dev';
 
 export default {
   input: 'src/meshcore-chat-panel.ts',
@@ -62,6 +63,14 @@ export default {
     ],
   },
   plugins: [
+    {
+      name: 'meshcore-build-metadata',
+      transform(code) {
+        return code
+          .replaceAll('__MESHCORE_CHAT_VERSION__', pkg.version)
+          .replaceAll('__MESHCORE_CHAT_GIT_HASH__', gitHash);
+      },
+    },
     resolve(),
     typescript({
       tsconfig: './tsconfig.json',
