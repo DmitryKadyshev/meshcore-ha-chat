@@ -656,7 +656,6 @@ export class MapPage extends LitElement {
   }
 
   private _debugRadioEvent(kind: string, data: Record<string, unknown>, extra?: Record<string, unknown>) {
-    if (!this._showMessage) return;
     console.debug('[MeshCore Chat]', kind, {
       event: data,
       ...extra,
@@ -718,7 +717,6 @@ export class MapPage extends LitElement {
       this._fitMessage();
     });
     void subscribe('meshcore_raw_event', data => {
-      if (!this._showMessage) return;
       const eventType = String(data.event_type || '').toUpperCase();
       const payload = data.payload;
       const rx = payload && typeof payload === 'object'
@@ -744,7 +742,7 @@ export class MapPage extends LitElement {
         rssi: rx?.rssi,
       });
 
-      if (eventType !== 'RX_LOG_DATA' || !rx) return;
+      if (!this._showMessage || eventType !== 'RX_LOG_DATA' || !rx) return;
       if (Number(rx.payload_type) !== 4) return;
 
       const advertMap = this._buildAdvertMap({
