@@ -752,39 +752,59 @@ export class MapPage extends LitElement {
   private _recordFloodGraph(data: Record<string, unknown>, rx?: Record<string, unknown>) {
     const source = rx || data;
     const payloadType = Number(source.payload_type ?? data.payloadType);
-    const payloadName = String(source.payload_typename ?? data.payloadTypeName ?? '').replace(/^EventType\./i, '').toUpperCase();
-    // Text packets use the normal message route. Other FLOOD packets use the graph.
+    const payloadName = String(source.payload_typename ?? data.payloadTypeName ?? '').replace(/^EventType\\./i, '').toUpperCase();
+
+    // Text packets use the message route. All other flood packets are shown
+    // as a technical route graph without a message bubble.
     if (payloadType === 2 || payloadType === 5 || payloadName === 'TEXT_MSG' || payloadName === 'GRP_TXT') {
       this._graphEdges = [];
       return;
     }
-    const routeType = String(source.route_typename ?? source.routeType ?? data.routeType ?? '').replace(/^EventType\./i, '').toUpperCase();
+
+    const routeType = String(source.route_typename ?? source.routeType ?? data.routeType ?? '')
+      .replace(/^EventType\\./i, '').toUpperCase();
     if (!['FLOOD', 'TC_FLOOD', 'TRANSPORT_FLOOD'].includes(routeType)) {
       this._graphEdges = [];
       return;
     }
+
     const sourceHashes = this._pathHashes(source);
     const hashes = sourceHashes.length ? sourceHashes : this._pathHashes(data);
-    if (hashes.length < 2) { this._graphEdges = []; return; }
-    const hops = hashes.map(hash => ({ hash, point: this._graphPoint(hash) }));
+    if (hashes.length < 2) {
+      this._graphEdges = [];
+      return;
+    }
+
+    const points = this._resolvePathPoints(hashes);
     const now = performance.now();
     const wallNow = Date.now();
     const snr = Number(source.snr ?? data.snr);
     const rssi = Number(source.rssi ?? data.rssi);
     const edges: GraphEdge[] = [];
-    for (let i = 0; i < hops.length - 1; i += 1) {
-      const from = hops[i].point; const to = hops[i + 1].point;
+
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const from = points[i];
+      const to = points[i + 1];
       if (!from || !to || from.key === to.key) continue;
-      edges.push({ id: from.key + '|' + to.key, from, to, count: 1, lastSeen: wallNow, flowStartedAt: now, snr: Number.isFinite(snr) ? snr : undefined, rssi: Number.isFinite(rssi) ? rssi : undefined });
+      edges.push({
+        id: from.key + '|' + to.key,
+        from,
+        to,
+        count: 1,
+        lastSeen: wallNow,
+        flowStartedAt: now,
+        snr: Number.isFinite(snr) ? snr : undefined,
+        rssi: Number.isFinite(rssi) ? rssi : undefined,
+      });
     }
+
     this._graphEdges = edges;
     this._debugRadioEvent('FLOOD graph built', data, {
       payloadType,
       payloadName,
       routeType,
       hashes,
-      resolved: hops.filter(hop => Boolean(hop.point)).map(hop => hop.hash),
-      unresolved: hops.filter(hop => !hop.point).map(hop => hop.hash),
+      resolved: points.map(point => point.name),
       edgeCount: edges.length,
     });
     if (edges.length) this._startGraphAnimation();
@@ -1075,26 +1095,80 @@ export class MapPage extends LitElement {
     return parsePathHashes(rx);
   }
 
+  private _resolvePathPoints(hashes: string[]): MessageMapPoint[] {
+    if (!hashes.length) return [];
+
+    // Keep the exact radio path order. A hash may resolve to a contact even
+    // when that contact has no advertised coordinates; such a node must still
+    // remain visible in the route graph.
+    const points = hashes.map((hash, index) => {
+      const contact = this._findContactByHash(hash);
+      const located = Boolean(contact && hasCoordinates(contact));
+      return {
+        key: contact?.public_key || `path:${hash}:${index}`,
+        name: contact ? this._name(contact) : hash,
+        lat: located ? Number(contact!.adv_lat) : Number.NaN,
+        lon: located ? Number(contact!.adv_lon) : Number.NaN,
+      };
+    });
+
+    const anchors = points
+      .map((point, index) => ({ point, index }))
+      .filter(item => Number.isFinite(item.point.lat) && Number.isFinite(item.point.lon));
+
+    // With two or more located nodes, put every unresolved hop on the
+    // geographic segment between its nearest located neighbours. This keeps
+    // 5053 → db94 → 565d on the visible edge even when db94 has no GPS data.
+    if (anchors.length >= 2) {
+      for (let i = 0; i < anchors.length - 1; i += 1) {
+        const left = anchors[i];
+        const right = anchors[i + 1];
+        const gap = right.index - left.index;
+        if (gap <= 1) continue;
+
+        for (let j = left.index + 1; j < right.index; j += 1) {
+          const t = (j - left.index) / gap;
+          points[j].lat = left.point.lat + (right.point.lat - left.point.lat) * t;
+          points[j].lon = left.point.lon + (right.point.lon - left.point.lon) * t;
+        }
+      }
+
+      // If unresolved nodes occur before the first or after the last located
+      // node, extrapolate using the nearest anchor pair. This preserves the
+      // route order without inventing a global/default coordinate.
+      const first = anchors[0];
+      const second = anchors[1];
+      const last = anchors[anchors.length - 1];
+      const beforeStepLat = second.point.lat - first.point.lat;
+      const beforeStepLon = second.point.lon - first.point.lon;
+      for (let j = first.index - 1; j >= 0; j -= 1) {
+        const distance = first.index - j;
+        points[j].lat = first.point.lat - beforeStepLat * distance;
+        points[j].lon = first.point.lon - beforeStepLon * distance;
+      }
+
+      const previous = anchors[anchors.length - 2];
+      const afterStepLat = last.point.lat - previous.point.lat;
+      const afterStepLon = last.point.lon - previous.point.lon;
+      for (let j = last.index + 1; j < points.length; j += 1) {
+        const distance = j - last.index;
+        points[j].lat = last.point.lat + afterStepLat * distance;
+        points[j].lon = last.point.lon + afterStepLon * distance;
+      }
+    }
+
+    return points.filter(point =>
+      Number.isFinite(point.lat) && Number.isFinite(point.lon)
+      && Math.abs(point.lat) <= 90 && Math.abs(point.lon) <= 180,
+    );
+  }
+
   private _buildPacketMap(data: Record<string, unknown>): MessageMapState {
     const payloadType = Number(data.payload_type);
     const payloadName = String(data.payload_typename || this._payloadTypeName(payloadType));
     const routeName = String(data.route_typename || 'UNKNOWN');
     const pathHashes = this._pathHashes(data);
-    const points: MessageMapPoint[] = [];
-    // Resolve every hash independently and append in exactly the packet order.
-    // Do not sort by contact activity/name: the radio path is the route.
-    pathHashes.forEach(hash => {
-      const contact = this._findContactByHash(hash);
-      if (!contact || !hasCoordinates(contact)) return;
-      const point: MessageMapPoint = {
-        key: contact.public_key,
-        name: this._name(contact),
-        lat: Number(contact.adv_lat),
-        lon: Number(contact.adv_lon),
-      };
-      // Keep the first occurrence of a node but never reorder the path.
-      if (!points.some(existing => existing.key === point.key)) points.push(point);
-    });
+    const points = this._resolvePathPoints(pathHashes);
 
     const pathLength = Number(data.path_len);
     const hashSize = Number(data.path_hash_size);
@@ -1212,27 +1286,36 @@ export class MapPage extends LitElement {
         && this._name(contact).trim().toLowerCase() === sender.trim().toLowerCase(),
       );
     const senderPoint: MessageMapPoint | undefined = senderContact && hasCoordinates(senderContact) ? {
-      key: senderContact.public_key, name: this._name(senderContact), lat: senderContact.adv_lat, lon: senderContact.adv_lon,
+      key: senderContact.public_key,
+      name: this._name(senderContact),
+      lat: senderContact.adv_lat,
+      lon: senderContact.adv_lon,
     } : undefined;
-    const rxLogs = Array.isArray(data.rx_log_data) ? data.rx_log_data as Array<Record<string, unknown>> : [];
+
+    const rxLogs = Array.isArray(data.rx_log_data)
+      ? data.rx_log_data as Array<Record<string, unknown>>
+      : [];
     const sourceLogs = rxLogs.length ? rxLogs : [{}];
     const routes: MessageMapRoute[] = [];
+
     for (const rx of sourceLogs) {
-      const points: MessageMapPoint[] = [];
-      if (senderPoint) points.push(senderPoint);
       const hashPath = this._pathHashes(rx);
-      for (const hash of hashPath) {
-        const contact = this._findContactByHash(hash);
-        if (!contact || !hasCoordinates(contact)) continue;
-        const point: MessageMapPoint = { key: contact.public_key, name: this._name(contact), lat: contact.adv_lat, lon: contact.adv_lon };
-        if (!points.some(existing => existing.key === point.key)) points.push(point);
+      const pathPoints = this._resolvePathPoints(hashPath);
+      const points = senderPoint ? [senderPoint, ...pathPoints] : pathPoints;
+      const uniquePoints: MessageMapPoint[] = [];
+      for (const point of points) {
+        if (!uniquePoints.some(existing => existing.key === point.key)) uniquePoints.push(point);
       }
-      if (points.length) routes.push({
-        points, hashPath,
-        snr: Number.isFinite(Number(rx.snr)) ? Number(rx.snr) : undefined,
-        rssi: Number.isFinite(Number(rx.rssi)) ? Number(rx.rssi) : undefined,
-      });
+      if (uniquePoints.length) {
+        routes.push({
+          points: uniquePoints,
+          hashPath,
+          snr: Number.isFinite(Number(rx.snr)) ? Number(rx.snr) : undefined,
+          rssi: Number.isFinite(Number(rx.rssi)) ? Number(rx.rssi) : undefined,
+        });
+      }
     }
+
     return {
       sender,
       target,
