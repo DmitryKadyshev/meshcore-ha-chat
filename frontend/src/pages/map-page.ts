@@ -752,7 +752,7 @@ export class MapPage extends LitElement {
   private _recordFloodGraph(data: Record<string, unknown>, rx?: Record<string, unknown>) {
     const source = rx || data;
     const payloadType = Number(source.payload_type ?? data.payloadType);
-    const payloadName = String(source.payload_typename ?? data.payloadTypeName ?? '').replace(/^EventType\\./i, '').toUpperCase();
+    const payloadName = String(source.payload_typename ?? data.payloadTypeName ?? '').replace(/^EventType\./i, '').toUpperCase();
 
     // Text packets use the message route. All other flood packets are shown
     // as a technical route graph without a message bubble.
@@ -762,7 +762,7 @@ export class MapPage extends LitElement {
     }
 
     const routeType = String(source.route_typename ?? source.routeType ?? data.routeType ?? '')
-      .replace(/^EventType\\./i, '').toUpperCase();
+      .replace(/^EventType\./i, '').toUpperCase();
     if (!['FLOOD', 'TC_FLOOD', 'TRANSPORT_FLOOD'].includes(routeType)) {
       this._graphEdges = [];
       return;
@@ -1042,7 +1042,7 @@ export class MapPage extends LitElement {
 
       if (this._showMessage && this._latestRadioRx) {
         const latestType = Number(this._latestRadioRx.payload_type);
-        const latestTypeName = String(this._latestRadioRx.payload_typename || '').replace(/^EventType\\./i, '').toUpperCase();
+        const latestTypeName = String(this._latestRadioRx.payload_typename || '').replace(/^EventType\./i, '').toUpperCase();
         const latestIsText = latestType === 2 || latestType === 5 || latestTypeName === 'TEXT_MSG' || latestTypeName === 'GRP_TXT';
 
         if (latestIsText) {
