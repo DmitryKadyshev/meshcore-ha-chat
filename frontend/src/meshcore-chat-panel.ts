@@ -14,6 +14,17 @@ import './pages/settings-page';
 import './components/trace-dialog';
 import './components/target-picker';
 
+const CARD_VERSION = '__MESHCORE_CHAT_VERSION__';
+const GIT_HASH = '__MESHCORE_CHAT_GIT_HASH__';
+
+console.info(
+  `%c MESHCORE-CHAT %c ${CARD_VERSION} %c ${GIT_HASH} `,
+  'color:#fff;background:#03a9f4;font-weight:700',
+  'color:#03a9f4;background:#fff',
+  'color:#fff;background:#607d8b;font-family:monospace',
+);
+
+
 @customElement('meshcore-chat-panel')
 export class MeshCorePanel extends LitElement {
   @property({ type: Object }) hass?: HomeAssistant;
