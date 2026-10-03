@@ -682,11 +682,19 @@ export class MapPage extends LitElement {
         rxLogData: data.rx_log_data,
       });
       if (!this._showMessage || !this._eventBelongsToDevice(data)) return;
-      this._messageMap = this._buildMessageMap(data);
+      const messageMap = this._buildMessageMap(data);
+      // meshcore_message can arrive immediately after RX_LOG_DATA for the
+      // same packet. Keep the richer raw-radio path instead of replacing it
+      // with a message map that lost the path metadata.
+      if (!this._messageMap?.routes.length || messageMap.routes.length >= this._messageMap.routes.length) {
+        this._messageMap = messageMap;
+      }
       this._fitMessage();
       this._debugRadioEvent('MESSAGE map built', data, {
         routes: this._messageMap.routes,
         routeCount: this._messageMap.routes.length,
+        rxRoutes: messageMap.routes,
+        rxRouteCount: messageMap.routes.length,
       });
     });
     void subscribe('meshcore_delivery_update', data => {
@@ -790,6 +798,7 @@ export class MapPage extends LitElement {
         routeHashes: this._pathHashes(rx),
         pathHashSize: rx.path_hash_size,
         pathLen: rx.path_len,
+        resolvedHops,
       });    });
   }
 
@@ -883,18 +892,23 @@ export class MapPage extends LitElement {
     const routeName = String(data.route_typename || 'UNKNOWN');
     const pathHashes = this._pathHashes(data);
     const points: MessageMapPoint[] = [];
-
-    for (const hash of pathHashes) {
+    const resolvedHops = pathHashes.map(hash => {
       const contact = this._findContactByHash(hash);
-      if (!contact || !hasCoordinates(contact)) continue;
-      const point: MessageMapPoint = {
+      const point = contact && hasCoordinates(contact) ? {
         key: contact.public_key,
         name: this._name(contact),
         lat: contact.adv_lat,
         lon: contact.adv_lon,
+      } : undefined;
+      if (point && !points.some(existing => existing.key === point.key)) points.push(point);
+      return {
+        hash,
+        found: Boolean(contact),
+        hasCoordinates: Boolean(point),
+        name: contact ? this._name(contact) : undefined,
+        publicKey: contact?.public_key,
       };
-      if (!points.some(existing => existing.key === point.key)) points.push(point);
-    }
+    });
 
     const pathLength = Number(data.path_len);
     const hashSize = Number(data.path_hash_size);
