@@ -865,23 +865,27 @@ export class MapPage extends LitElement {
     this._center = [(minLat + maxLat) / 2, (minLon + maxLon) / 2];
 
     if (nodes.length === 1) {
-      this._zoom = 12;
+      this._zoom = MAX_ZOOM;
       return;
     }
 
+    // Choose the highest zoom level that still keeps every located node
+    // inside the viewport. This gives the initial map the maximum useful
+    // scale instead of intentionally zooming out one extra level.
     const width = Math.max(this._mapSize.width - 80, 320);
     const height = Math.max(this._mapSize.height - 80, 240);
-    let zoom = MAX_ZOOM;
+    let zoom = MIN_ZOOM;
 
     for (let z = MIN_ZOOM; z <= MAX_ZOOM; z++) {
       const [x1, y1] = project(minLat, minLon, z);
       const [x2, y2] = project(maxLat, maxLon, z);
       if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) {
         zoom = z;
+      } else {
         break;
       }
     }
-    this._zoom = Math.max(MIN_ZOOM, zoom - 1);
+    this._zoom = zoom;
   }
 
   private _focus(contact: Contact) {
