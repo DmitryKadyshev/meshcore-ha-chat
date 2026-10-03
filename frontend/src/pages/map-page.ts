@@ -740,51 +740,86 @@ export class MapPage extends LitElement {
     return { key: contact.public_key, name: this._name(contact), lat: Number(contact.adv_lat), lon: Number(contact.adv_lon) };
   }
 
-  private _recordFloodGraph(rx: Record<string, unknown>) {
-    if (String(rx.route_typename || '').toUpperCase() !== 'FLOOD') return;
-    const hashes = this._pathHashes(rx);
+  private _recordFloodGraph(data: Record<string, unknown>, rx?: Record<string, unknown>) {
+    const source = rx || data;
+    const routeType = String(source.route_typename ?? data.routeType ?? '').replace(/^EventType\./i, '').toUpperCase();
+    if (routeType !== 'FLOOD') return;
+    const sourceHashes = this._pathHashes(source);
+    const hashes = sourceHashes.length ? sourceHashes : this._pathHashes(data);
     if (hashes.length < 2) return;
-    const points = hashes.map(hash => this._graphPoint(hash)).filter((point): point is MessageMapPoint => Boolean(point));
-    if (points.length < 2) return;
+
+    // Path IDs are prefixes of node public keys. Only connect adjacent hops
+    // when both IDs resolve to located contacts; never bridge an unknown hop.
+    const hops = hashes.map(hash => ({ hash, point: this._graphPoint(hash) }));
     const now = performance.now();
     const wallNow = Date.now();
     const next = [...this._graphEdges];
-    for (let i = 0; i < points.length - 1; i += 1) {
-      const from = points[i]; const to = points[i + 1];
+
+    for (let i = 0; i < hops.length - 1; i += 1) {
+      const from = hops[i].point;
+      const to = hops[i + 1].point;
+      if (!from || !to || from.key === to.key) continue;
       const id = [from.key, to.key].sort().join('|');
       const edge = next.find(item => item.id === id);
+      const snr = Number(source.snr ?? data.snr);
+      const rssi = Number(source.rssi ?? data.rssi);
+
       if (edge) {
-        edge.from = from; edge.to = to; edge.count += 1; edge.lastSeen = wallNow; edge.flowStartedAt = now;
-        if (Number.isFinite(Number(rx.snr))) edge.snr = Number(rx.snr);
-        if (Number.isFinite(Number(rx.rssi))) edge.rssi = Number(rx.rssi);
+        edge.from = from;
+        edge.to = to;
+        edge.count += 1;
+        edge.lastSeen = wallNow;
+        edge.flowStartedAt = now;
+        if (Number.isFinite(snr)) edge.snr = snr;
+        if (Number.isFinite(rssi)) edge.rssi = rssi;
       } else {
-        next.push({ id, from, to, count: 1, lastSeen: wallNow, flowStartedAt: now, snr: Number.isFinite(Number(rx.snr)) ? Number(rx.snr) : undefined, rssi: Number.isFinite(Number(rx.rssi)) ? Number(rx.rssi) : undefined });
+        next.push({
+          id,
+          from,
+          to,
+          count: 1,
+          lastSeen: wallNow,
+          flowStartedAt: now,
+          snr: Number.isFinite(snr) ? snr : undefined,
+          rssi: Number.isFinite(rssi) ? rssi : undefined,
+        });
       }
     }
+
     this._graphEdges = next.filter(edge => wallNow - edge.lastSeen < MapPage.GRAPH_TTL_MS);
     this._startGraphAnimation();
   }
 
   private _startGraphAnimation() {
-    if (this._graphAnimationFrame === undefined) this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
+    if (this._graphAnimationFrame === undefined) {
+      this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
+    }
   }
 
   private _animateGraph = (now: number) => {
     this._graphAnimationFrame = undefined;
-    const layer = this.shadowRoot?.querySelector('.graph-layer');
-    if (!layer || !this._graphEdges.length) return;
     const live = this._graphEdges.filter(edge => Date.now() - edge.lastSeen < MapPage.GRAPH_TTL_MS);
-    if (live.length !== this._graphEdges.length) { this._graphEdges = live; return; }
+    if (live.length !== this._graphEdges.length) this._graphEdges = live;
+    if (!live.length) return;
+
+    const layer = this.shadowRoot?.querySelector('.graph-layer');
+    if (!layer) {
+      this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
+      return;
+    }
+
     for (const edge of live) {
       const key = edge.id.replace(/[^a-zA-Z0-9_-]/g, '_');
       const packet = layer.querySelector(`[data-graph-packet="${key}"]`) as SVGCircleElement | null;
       if (!packet) continue;
-      const start = this._mapPoint(edge.from.lat, edge.from.lon); const end = this._mapPoint(edge.to.lat, edge.to.lon);
-      const duration = Math.max(900, Math.min(3200, 1800 + Math.hypot(end.left - start.left, end.top - start.top) * 2));
+      const start = this._mapPoint(edge.from.lat, edge.from.lon);
+      const end = this._mapPoint(edge.to.lat, edge.to.lon);
+      const duration = Math.max(900, Math.min(3200, 1400 + Math.hypot(end.left - start.left, end.top - start.top) * 2));
       const progress = ((now - edge.flowStartedAt) % duration) / duration;
       packet.setAttribute('cx', String(start.left + (end.left - start.left) * progress));
       packet.setAttribute('cy', String(start.top + (end.top - start.top) * progress));
     }
+
     this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
   };
 
@@ -851,7 +886,7 @@ export class MapPage extends LitElement {
       this._fitMessage();
     });
     void subscribe('meshcore_raw_event', data => {
-      const eventType = String(data.event_type || '').replace(/^EventType\\./i, '').toUpperCase();
+      const eventType = String(data.event_type || '').replace(/^EventType\./i, '').toUpperCase();
       const payload = data.payload;
       const rx = payload && typeof payload === 'object'
         ? payload as Record<string, unknown>
