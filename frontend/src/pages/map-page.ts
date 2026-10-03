@@ -763,10 +763,6 @@ export class MapPage extends LitElement {
 
     const routeType = String(source.route_typename ?? source.routeType ?? data.routeType ?? '')
       .replace(/^EventType\./i, '').toUpperCase();
-    if (!['FLOOD', 'TC_FLOOD', 'TRANSPORT_FLOOD'].includes(routeType)) {
-      this._graphEdges = [];
-      return;
-    }
 
     const sourceHashes = this._pathHashes(source);
     const hashes = sourceHashes.length ? sourceHashes : this._pathHashes(data);
@@ -799,7 +795,7 @@ export class MapPage extends LitElement {
     }
 
     this._graphEdges = edges;
-    this._debugRadioEvent('FLOOD graph built', data, {
+    this._debugRadioEvent('RADIO route graph built', data, {
       payloadType,
       payloadName,
       routeType,
@@ -928,7 +924,7 @@ export class MapPage extends LitElement {
       // meshcore-ha is delivering to the panel. Advert-specific details are
       // logged separately below.
       this._recordRawRadioEvent(data, rx);
-      if (this._showMessage && rx) this._recordFloodGraph(data, rx);
+      if (this._showMessage && eventType === 'RX_LOG_DATA' && rx) this._recordFloodGraph(data, rx);
 
       this._debugRadioEvent('RAW_EVENT received', data, {
         eventType,
