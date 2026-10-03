@@ -670,6 +670,12 @@ export class MapPage extends LitElement {
   }
 
   private _debugRadioEvent(kind: string, data: Record<string, unknown>, extra?: Record<string, unknown>) {
+    console.debug('[MeshCore Chat]', kind, {
+      event: data,
+      ...extra,
+    });
+  }
+
   private _rawNumber(value: unknown, suffix = ''): string {
     if (value === undefined || value === null || value === '') return '—';
     const number = Number(value);
