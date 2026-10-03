@@ -298,6 +298,7 @@ export class MapPage extends LitElement {
     }
 
     .map {
+      flex: 1 1 0;
       position: relative;
       min-width: 0;
       min-height: 0;
