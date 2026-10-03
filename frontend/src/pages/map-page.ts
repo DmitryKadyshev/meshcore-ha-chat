@@ -769,13 +769,13 @@ export class MapPage extends LitElement {
       this._fitMessage();
     });
     void subscribe('meshcore_raw_event', data => {
-      const eventType = String(data.event_type || '').toUpperCase();
+      const eventType = String(data.event_type || '').replace(/^EventType\\./i, '').toUpperCase();
       const payload = data.payload;
       const rx = payload && typeof payload === 'object'
         ? payload as Record<string, unknown>
         : undefined;
 
-      // Log every raw event type so the browser console shows exactly what
+      const payloadTypeName = String(rx?.payload_typename || '').replace(/^EventType\\./i, '').toUpperCase();\n      if (eventType === 'NO_MORE_MSGS' || eventType === 'BATTERY' || payloadTypeName === 'NO_MORE_MSGS' || payloadTypeName === 'BATTERY') return;\n\n      // Log every raw event type so the browser console shows exactly what
       // meshcore-ha is delivering to the panel. Advert-specific details are
       // logged separately below.
       this._recordRawRadioEvent(data, rx);
