@@ -745,7 +745,7 @@ export class MapPage extends LitElement {
       if (!this._showMessage || eventType !== 'RX_LOG_DATA' || !rx) return;
 
       const payloadType = Number(rx.payload_type);
-      if (payloadType === 8) {
+      if (payloadType === 8 || payloadType === 2) {
         const pathMap = this._buildPathMap({
           ...rx,
           timestamp: data.timestamp,
@@ -754,6 +754,7 @@ export class MapPage extends LitElement {
         this._fitMessage();
 
         this._debugRadioEvent('PATH map built', data, {
+          payloadType,
           name: pathMap.sender,
           target: pathMap.target,
           text: pathMap.text,
