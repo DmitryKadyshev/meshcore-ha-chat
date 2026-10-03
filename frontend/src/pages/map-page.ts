@@ -915,7 +915,6 @@ export class MapPage extends LitElement {
 
       this._latestRadioRx = { ...rx, timestamp: data.timestamp };
       const payloadType = Number(rx.payload_type);
-      const payloadTypeName = String(rx.payload_typename || '').replace(/^EventType\./i, '').toUpperCase();
       const isTextPacket = payloadType === 2 || payloadType === 5 || payloadTypeName === 'TEXT_MSG' || payloadTypeName === 'GRP_TXT';
       if (payloadType === 4) {
         // A PUSH/advert packet is authoritative proof that this node was
@@ -1569,9 +1568,16 @@ export class MapPage extends LitElement {
                     this._selectedKey = null;
                     this._fitAll();
                   } else if (this._latestRadioRx) {
-                    if (!isTextPacket) { this._messageMap = null; if (this._graphEdges.length) this._fitGraph(); return; }
-      this._messageMap = this._buildPacketMap(this._latestRadioRx);
-                    this._fitMessage();
+                    const latestType = Number(this._latestRadioRx.payload_type);
+                    const latestTypeName = String(this._latestRadioRx.payload_typename || '').replace(/^EventType\./i, '').toUpperCase();
+                    const latestIsText = latestType === 2 || latestType === 5 || latestTypeName === 'TEXT_MSG' || latestTypeName === 'GRP_TXT';
+                    if (!latestIsText) {
+                      this._messageMap = null;
+                      if (this._graphEdges.length) this._fitGraph();
+                    } else {
+                      this._messageMap = this._buildPacketMap(this._latestRadioRx);
+                      this._fitMessage();
+                    }
                   } else {
                     this._fitMessage();
                   }
