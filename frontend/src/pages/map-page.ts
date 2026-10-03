@@ -655,6 +655,14 @@ export class MapPage extends LitElement {
     return entityId.includes(`meshcore_${prefix}_`);
   }
 
+  private _debugRadioEvent(kind: string, data: Record<string, unknown>, extra?: Record<string, unknown>) {
+    if (!this._showMessage) return;
+    console.debug('[MeshCore Chat]', kind, {
+      event: data,
+      ...extra,
+    });
+  }
+
   private _setupMessageSubscriptions() {
     this._teardownMessageSubscriptions();
     if (!this._messageSubscriptionsActive || !this.hass?.connection?.subscribeEvents) return;
@@ -669,11 +677,24 @@ export class MapPage extends LitElement {
       } catch (_) { /* Older MeshCore versions may not expose this event. */ }
     };
     void subscribe('meshcore_message', data => {
+      this._debugRadioEvent('MESSAGE received', data, {
+        belongsToDevice: this._eventBelongsToDevice(data),
+        showMessage: this._showMessage,
+        rxLogData: data.rx_log_data,
+      });
       if (!this._showMessage || !this._eventBelongsToDevice(data)) return;
       this._messageMap = this._buildMessageMap(data);
       this._fitMessage();
+      this._debugRadioEvent('MESSAGE map built', data, {
+        routes: this._messageMap.routes,
+        routeCount: this._messageMap.routes.length,
+      });
     });
     void subscribe('meshcore_delivery_update', data => {
+      this._debugRadioEvent('DELIVERY_UPDATE received', data, {
+        belongsToDevice: this._eventBelongsToDevice(data),
+        showMessage: this._showMessage,
+      });
       if (!this._showMessage || !this._eventBelongsToDevice(data)) return;
       const current = this._messageMap;
       const text = String(data.message || '');
@@ -698,16 +719,52 @@ export class MapPage extends LitElement {
     });
     void subscribe('meshcore_raw_event', data => {
       if (!this._showMessage) return;
-      if (String(data.event_type || '').toUpperCase() !== 'RX_LOG_DATA') return;
+      const eventType = String(data.event_type || '').toUpperCase();
       const payload = data.payload;
-      if (!payload || typeof payload !== 'object') return;
-      const rx = payload as Record<string, unknown>;
+      const rx = payload && typeof payload === 'object'
+        ? payload as Record<string, unknown>
+        : undefined;
+
+      // Log every raw event type so the browser console shows exactly what
+      // meshcore-ha is delivering to the panel. Advert-specific details are
+      // logged separately below.
+      this._debugRadioEvent('RAW_EVENT received', data, {
+        eventType,
+        payloadType: rx?.payload_type,
+        pathHashSize: rx?.path_hash_size,
+        pathLen: rx?.path_len,
+        path: rx?.path,
+        pathNodes: rx?.path_nodes,
+        routeType: rx?.route_typename,
+        advKey: rx?.adv_key,
+        advName: rx?.adv_name,
+        advLat: rx?.adv_lat,
+        advLon: rx?.adv_lon,
+        snr: rx?.snr,
+        rssi: rx?.rssi,
+      });
+
+      if (eventType !== 'RX_LOG_DATA' || !rx) return;
       if (Number(rx.payload_type) !== 4) return;
-      this._messageMap = this._buildAdvertMap({
+
+      const advertMap = this._buildAdvertMap({
         ...rx,
         timestamp: data.timestamp,
       });
+      this._messageMap = advertMap;
       this._fitMessage();
+
+      this._debugRadioEvent('ADVERT map built', data, {
+        name: advertMap.sender,
+        target: advertMap.target,
+        text: advertMap.text,
+        timestamp: advertMap.timestamp,
+        routes: advertMap.routes,
+        routeCount: advertMap.routes.length,
+        routeHashes: this._pathHashes(rx),
+        pathHashSize: rx.path_hash_size,
+        pathLen: rx.path_len,
+      });
     });
   }
 
