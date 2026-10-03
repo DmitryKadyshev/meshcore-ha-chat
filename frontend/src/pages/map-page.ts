@@ -18,6 +18,16 @@ interface RawRadioRow {
   id: number; time: string; type: string; route: string; path: string;
   snr: string; rssi: string; noise: string; telemetry: string;
 }
+interface GraphEdge {
+  id: string;
+  from: MessageMapPoint;
+  to: MessageMapPoint;
+  count: number;
+  lastSeen: number;
+  flowStartedAt: number;
+  snr?: number;
+  rssi?: number;
+}
 
 const TILE_SIZE = 256;
 const MIN_ZOOM = 2;
@@ -61,7 +71,10 @@ export class MapPage extends LitElement {
   @state() private _showMessage = false;
   @state() private _messageMap: MessageMapState | null = null;
   @state() private _rawRadioRows: RawRadioRow[] = [];
+  @state() private _graphEdges: GraphEdge[] = [];
   private _rawRadioRowId = 0;
+  private _graphAnimationFrame?: number;
+  private static readonly GRAPH_TTL_MS = 5 * 60 * 1000;
 
   private _mapEl?: HTMLElement;
   private _resizeObserver?: ResizeObserver;
@@ -369,7 +382,21 @@ export class MapPage extends LitElement {
       pointer-events: none;
       overflow: visible;
     }
-    .message-route-layer {
+    .graph-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      overflow: visible;
+    }
+    .graph-edge { fill: none; stroke: rgba(3,169,244,.55); stroke-width: 2; stroke-linecap: round; transition: opacity 300ms ease, stroke-width 300ms ease; }
+    .graph-edge.active { stroke: rgba(3,169,244,.9); }
+    .graph-node { fill: var(--card-background-color,#fff); stroke: rgba(3,169,244,.75); stroke-width: 2; }
+    .graph-packet { fill: #fff; stroke: rgba(3,169,244,.98); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(3,169,244,.9)); }
+
+.message-route-layer {
       position: absolute;
       inset: 0;
       z-index: 3;
@@ -580,6 +607,7 @@ export class MapPage extends LitElement {
     }
     this._messageSubscriptionsActive = false;
     this._teardownMessageSubscriptions();
+    if (this._graphAnimationFrame !== undefined) { window.cancelAnimationFrame(this._graphAnimationFrame); this._graphAnimationFrame = undefined; }
     if (this._activityTimer !== undefined) {
       window.clearInterval(this._activityTimer);
       this._activityTimer = undefined;
@@ -706,6 +734,60 @@ export class MapPage extends LitElement {
     this._rawRadioRows = [row, ...this._rawRadioRows].slice(0, 100);
   }
 
+  private _graphPoint(hash: string): MessageMapPoint | undefined {
+    const contact = this._findContactByHash(hash);
+    if (!contact || !hasCoordinates(contact)) return undefined;
+    return { key: contact.public_key, name: this._name(contact), lat: Number(contact.adv_lat), lon: Number(contact.adv_lon) };
+  }
+
+  private _recordFloodGraph(rx: Record<string, unknown>) {
+    if (String(rx.route_typename || '').toUpperCase() !== 'FLOOD') return;
+    const hashes = this._pathHashes(rx);
+    if (hashes.length < 2) return;
+    const points = hashes.map(hash => this._graphPoint(hash)).filter((point): point is MessageMapPoint => Boolean(point));
+    if (points.length < 2) return;
+    const now = performance.now();
+    const wallNow = Date.now();
+    const next = [...this._graphEdges];
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const from = points[i]; const to = points[i + 1];
+      const id = [from.key, to.key].sort().join('|');
+      const edge = next.find(item => item.id === id);
+      if (edge) {
+        edge.from = from; edge.to = to; edge.count += 1; edge.lastSeen = wallNow; edge.flowStartedAt = now;
+        if (Number.isFinite(Number(rx.snr))) edge.snr = Number(rx.snr);
+        if (Number.isFinite(Number(rx.rssi))) edge.rssi = Number(rx.rssi);
+      } else {
+        next.push({ id, from, to, count: 1, lastSeen: wallNow, flowStartedAt: now, snr: Number.isFinite(Number(rx.snr)) ? Number(rx.snr) : undefined, rssi: Number.isFinite(Number(rx.rssi)) ? Number(rx.rssi) : undefined });
+      }
+    }
+    this._graphEdges = next.filter(edge => wallNow - edge.lastSeen < MapPage.GRAPH_TTL_MS);
+    this._startGraphAnimation();
+  }
+
+  private _startGraphAnimation() {
+    if (this._graphAnimationFrame === undefined) this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
+  }
+
+  private _animateGraph = (now: number) => {
+    this._graphAnimationFrame = undefined;
+    const layer = this.shadowRoot?.querySelector('.graph-layer');
+    if (!layer || !this._graphEdges.length) return;
+    const live = this._graphEdges.filter(edge => Date.now() - edge.lastSeen < MapPage.GRAPH_TTL_MS);
+    if (live.length !== this._graphEdges.length) { this._graphEdges = live; return; }
+    for (const edge of live) {
+      const key = edge.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const packet = layer.querySelector(`[data-graph-packet="${key}"]`) as SVGCircleElement | null;
+      if (!packet) continue;
+      const start = this._mapPoint(edge.from.lat, edge.from.lon); const end = this._mapPoint(edge.to.lat, edge.to.lon);
+      const duration = Math.max(900, Math.min(3200, 1800 + Math.hypot(end.left - start.left, end.top - start.top) * 2));
+      const progress = ((now - edge.flowStartedAt) % duration) / duration;
+      packet.setAttribute('cx', String(start.left + (end.left - start.left) * progress));
+      packet.setAttribute('cy', String(start.top + (end.top - start.top) * progress));
+    }
+    this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
+  };
+
   private _setupMessageSubscriptions() {
     this._teardownMessageSubscriptions();
     if (!this._messageSubscriptionsActive || !this.hass?.connection?.subscribeEvents) return;
@@ -782,6 +864,7 @@ export class MapPage extends LitElement {
       // meshcore-ha is delivering to the panel. Advert-specific details are
       // logged separately below.
       this._recordRawRadioEvent(data, rx);
+      if (rx) this._recordFloodGraph(rx);
 
       this._debugRadioEvent('RAW_EVENT received', data, {
         eventType,
@@ -1511,6 +1594,19 @@ export class MapPage extends LitElement {
               `)}
             </div>
 
+            ${!this._showMessage && this._graphEdges.length ? html`
+              <svg class="graph-layer" aria-hidden="true" width="100%" height="100%" viewBox=${`0 0 ${Math.max(1, this._mapSize.width)} ${Math.max(1, this._mapSize.height)}`} preserveAspectRatio="none">
+                ${this._graphEdges.map(edge => {
+                  const age = Date.now() - edge.lastSeen;
+                  const opacity = Math.max(.08, 1 - age / MapPage.GRAPH_TTL_MS);
+                  const width = Math.min(6, 1.5 + Math.log2(edge.count + 1));
+                  const from = this._mapPoint(edge.from.lat, edge.from.lon);
+                  const to = this._mapPoint(edge.to.lat, edge.to.lon);
+                  const key = edge.id.replace(/[^a-zA-Z0-9_-]/g, '_');
+                  return html`<line class="graph-edge ${age < 15000 ? 'active' : ''}" x1=${from.left} y1=${from.top} x2=${to.left} y2=${to.top} style="opacity:${opacity};stroke-width:${width}px"></line><circle class="graph-packet" data-graph-packet=${key} cx=${from.left} cy=${from.top} r="4"></circle>`;
+                })}
+              </svg>
+            ` : nothing}
             ${this._showMessage
               ? html`
                   <svg
