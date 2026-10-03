@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing } from 'lit';
+import { LitElement, html, css, nothing, type PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Contact, HomeAssistant, PanelConfig } from '../types';
 import { hasCoordinates as hasRadioCoordinates, pathHashes as parsePathHashes, payloadTypeName as radioPayloadTypeName } from '../meshcore-radio';
@@ -824,7 +824,7 @@ export class MapPage extends LitElement {
     });
   }
 
-  protected updated(changedProperties: Map<string, unknown>) {
+  protected updated(changedProperties: PropertyValues) {
     super.updated(changedProperties);
     if (changedProperties.has('contacts') && this._showMessage && this._latestRadioRx) {
       const packetMap = this._buildPacketMap(this._latestRadioRx);
