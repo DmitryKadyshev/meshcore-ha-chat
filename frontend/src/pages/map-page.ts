@@ -597,7 +597,13 @@ export class MapPage extends LitElement {
       if (!entry) return;
       const { width, height } = entry.contentRect;
       this._mapSize = { width, height };
-      this._fitAll();
+      if (this._showMessage && this._graphEdges.length) {
+        this._fitGraph();
+      } else if (this._showMessage && this._messageMap) {
+        this._fitMessage();
+      } else {
+        this._fitAll();
+      }
     });
   }
 
@@ -769,9 +775,18 @@ export class MapPage extends LitElement {
     for (let i = 0; i < hops.length - 1; i += 1) {
       const from = hops[i].point; const to = hops[i + 1].point;
       if (!from || !to || from.key === to.key) continue;
-      edges.push({ id: [from.key, to.key].sort().join('|'), from, to, count: 1, lastSeen: wallNow, flowStartedAt: now, snr: Number.isFinite(snr) ? snr : undefined, rssi: Number.isFinite(rssi) ? rssi : undefined });
+      edges.push({ id: from.key + '|' + to.key, from, to, count: 1, lastSeen: wallNow, flowStartedAt: now, snr: Number.isFinite(snr) ? snr : undefined, rssi: Number.isFinite(rssi) ? rssi : undefined });
     }
     this._graphEdges = edges;
+    this._debugRadioEvent('FLOOD graph built', data, {
+      payloadType,
+      payloadName,
+      routeType,
+      hashes,
+      resolved: hops.filter(hop => Boolean(hop.point)).map(hop => hop.hash),
+      unresolved: hops.filter(hop => !hop.point).map(hop => hop.hash),
+      edgeCount: edges.length,
+    });
     if (edges.length) this._startGraphAnimation();
   }
 
@@ -1006,10 +1021,19 @@ export class MapPage extends LitElement {
       if (!hadSelected) this._selectedKey = null;
 
       if (this._showMessage && this._latestRadioRx) {
-        const packetMap = this._buildPacketMap(this._latestRadioRx);
-        if (packetMap.routes.length || !this._messageMap?.routes.length) {
-          this._messageMap = packetMap;
-          this._fitMessage();
+        const latestType = Number(this._latestRadioRx.payload_type);
+        const latestTypeName = String(this._latestRadioRx.payload_typename || '').replace(/^EventType\\./i, '').toUpperCase();
+        const latestIsText = latestType === 2 || latestType === 5 || latestTypeName === 'TEXT_MSG' || latestTypeName === 'GRP_TXT';
+
+        if (latestIsText) {
+          const packetMap = this._buildPacketMap(this._latestRadioRx);
+          if (packetMap.routes.length || !this._messageMap?.routes.length) {
+            this._messageMap = packetMap;
+            this._fitMessage();
+          }
+        } else {
+          this._messageMap = null;
+          if (this._graphEdges.length) this._fitGraph();
         }
       } else {
         this._fitAll();
