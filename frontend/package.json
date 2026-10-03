@@ -6,8 +6,8 @@
   "scripts": {
     "build": "rollup -c",
     "dev": "rollup -c --watch",
-    "lint": "eslint src/ --ext .ts",
-    "lint:fix": "eslint src/ --ext .ts --fix",
+    "lint": "tsc --noEmit",
+    "lint:fix": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
   },
