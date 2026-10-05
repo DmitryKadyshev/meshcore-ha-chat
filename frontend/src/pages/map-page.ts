@@ -820,8 +820,12 @@ export class MapPage extends LitElement {
 
   private _showRadioRow(row: RawRadioRow) {
     this._selectedRadioRowId = row.id;
+    // A historical RAW_EVENT selection is a technical route selection, not a
+    // message-bubble selection. Force the graph mode and clear any stale
+    // message overlay before rebuilding the selected packet.
     this._showMessage = true;
     this._messageMap = null;
+    this.requestUpdate();
 
     // A table row is a historical snapshot of the received path. Resolve it
     // against the current contact store and use the exact same graph builder
@@ -843,9 +847,16 @@ export class MapPage extends LitElement {
     hashes: string[],
     snrValue?: string | number,
     rssiValue?: string | number,
+    extraPoint?: MessageMapPoint,
   ): GraphEdge[] {
-    if (hashes.length < 2) return [];
+    if (hashes.length < 1 && !extraPoint) return [];
     const points = this._resolvePathPoints(hashes);
+    if (extraPoint && Number.isFinite(extraPoint.lat) && Number.isFinite(extraPoint.lon)) {
+      if (!points.length || points[points.length - 1].key !== extraPoint.key) {
+        points.push(extraPoint);
+      }
+    }
+    if (points.length < 2) return [];
     const now = performance.now();
     const wallNow = Date.now();
     const snr = Number(snrValue);
@@ -896,10 +907,37 @@ export class MapPage extends LitElement {
 
     const sourceHashes = this._pathHashes(source);
     const hashes = sourceHashes.length ? sourceHashes : this._pathHashes(data);
+
+    // For FLOOD ADVERT packets the path contains forwarding hops, while the
+    // advertised node itself is the packet endpoint. Include its advertised
+    // coordinates as the final graph vertex so the complete route is visible.
+    let advertPoint: MessageMapPoint | undefined;
+    if (payloadType === 4) {
+      const advKey = String(source.adv_key || data.adv_key || '').toLowerCase().replace(/[^0-9a-f]/g, '');
+      const advName = String(source.adv_name || data.adv_name || 'Advertised node');
+      const advLat = Number(source.adv_lat ?? data.adv_lat);
+      const advLon = Number(source.adv_lon ?? data.adv_lon);
+      if (Number.isFinite(advLat) && Number.isFinite(advLon)
+        && Math.abs(advLat) <= 90 && Math.abs(advLon) <= 180
+        && !(advLat === 0 && advLon === 0)) {
+        const normalizedLat = Number.isInteger(advLat) && Math.abs(advLat) > 180 ? advLat / 1e6 : advLat;
+        const normalizedLon = Number.isInteger(advLon) && Math.abs(advLon) > 180 ? advLon / 1e6 : advLon;
+        if (Math.abs(normalizedLat) <= 90 && Math.abs(normalizedLon) <= 180) {
+          advertPoint = {
+            key: advKey || `advert:${advName}`,
+            name: advName,
+            lat: normalizedLat,
+            lon: normalizedLon,
+          };
+        }
+      }
+    }
+
     const graphEdges = this._buildGraphEdges(
       hashes,
       typeof source.snr === 'string' || typeof source.snr === 'number' ? source.snr : (typeof data.snr === 'string' || typeof data.snr === 'number' ? data.snr : undefined),
       typeof source.rssi === 'string' || typeof source.rssi === 'number' ? source.rssi : (typeof data.rssi === 'string' || typeof data.rssi === 'number' ? data.rssi : undefined),
+      advertPoint,
     );
     this._graphEdges = graphEdges;
     if (graphEdges.length) {
