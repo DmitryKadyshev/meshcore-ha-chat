@@ -385,8 +385,9 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     expect(edges).toHaveLength(pathNodes.length - 1);
     expect(edges[0].from.name).toBe('Node 0a18');
     expect(edges[0].to.name).toBe('Node d69c');
-    expect(edges.at(-1)?.from.name).toBe('Node 79d8');
-    expect(edges.at(-1)?.to.name).toBe('Node 2121');
+    const lastEdge = edges[edges.length - 1];
+    expect(lastEdge?.from.name).toBe('Node 79d8');
+    expect(lastEdge?.to.name).toBe('Node 2121');
     expect(edges.every(edge =>
       Number.isFinite(edge.from.lat) && Number.isFinite(edge.from.lon)
       && Number.isFinite(edge.to.lat) && Number.isFinite(edge.to.lon),
