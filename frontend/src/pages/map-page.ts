@@ -1077,7 +1077,7 @@ export class MapPage extends LitElement {
 
         if (!isTextPacket) {
           this._messageMap = null;
-          if (this._graphEdges.length) this._fitGraph();
+          if (this._graphEdges.length) void this._refreshGraphView('ADVERT');
           return;
         }
 
@@ -1111,7 +1111,7 @@ export class MapPage extends LitElement {
         // Drop any stale message bubble/route from a previous packet so the
         // two visualizations never overlap (BUG-13).
         this._messageMap = null;
-        if (this._graphEdges.length) this._fitGraph();
+        if (this._graphEdges.length) void this._refreshGraphView('technical packet');
         return;
       }
 
@@ -1133,7 +1133,7 @@ export class MapPage extends LitElement {
         this._fitMessage();
       } else {
         this._messageMap = null;
-        if (this._graphEdges.length) this._fitGraph();
+        if (this._graphEdges.length) void this._refreshGraphView('packet fallback');
       }
 
       this._debugRadioEvent('PACKET map built', data, {
@@ -1191,7 +1191,7 @@ export class MapPage extends LitElement {
           if (this._latestRadioEventData && this._latestRadioRx) {
             this._recordFloodGraph(this._latestRadioEventData, this._latestRadioRx);
           } else if (this._graphEdges.length) {
-            this._fitGraph();
+            void this._refreshGraphView('contacts updated');
           }
         }
       } else {
@@ -2078,7 +2078,7 @@ export class MapPage extends LitElement {
                     const latestIsText = latestType === 2 || latestType === 5 || latestTypeName === 'TEXT_MSG' || latestTypeName === 'GRP_TXT';
                     if (!latestIsText) {
                       this._messageMap = null;
-                      if (this._graphEdges.length) this._fitGraph();
+                      if (this._graphEdges.length) void this._refreshGraphView('show latest radio event');
                     } else {
                       this._messageMap = this._buildPacketMap(this._latestRadioRx);
                       this._fitMessage();
