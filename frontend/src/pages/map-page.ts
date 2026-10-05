@@ -820,10 +820,12 @@ export class MapPage extends LitElement {
 
   private _showRadioRow(row: RawRadioRow) {
     this._selectedRadioRowId = row.id;
-    // A historical RAW_EVENT selection is a technical route selection.
-    // Do not enter message-overlay mode: that mode has its own viewport
-    // lifecycle and can overwrite the technical graph after the click.
-    this._showMessage = false;
+
+    // Keep the "Show latest radio event" checkbox state unchanged. Selecting
+    // history must not silently disable the mode selected by the user.
+    // The technical graph is rendered independently of the message overlay,
+    // so the selected historical packet can be shown while the checkbox
+    // remains enabled.
     this._messageMap = null;
 
     // A table row is a historical snapshot of the received path. Resolve it
