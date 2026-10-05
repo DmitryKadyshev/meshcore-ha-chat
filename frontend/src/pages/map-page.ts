@@ -16,7 +16,7 @@ interface MapTile { x: number; y: number; left: number; top: number; src: string
 interface TileTransition { tiles: MapTile[]; scale: number; }
 interface RawRadioRow {
   id: number; time: string; type: string; route: string; path: string;
-  message: string; snr: string; rssi: string; noise: string; telemetry: string;
+  message: string; coordinates: string; snr: string; rssi: string; noise: string; telemetry: string;
 }
 interface GraphEdge {
   id: string;
@@ -93,6 +93,8 @@ export class MapPage extends LitElement {
   private _liveLastAdvert = new Map<string, number>();
   /** Keep the raw latest radio packet so a contact refresh can resolve its path later. */
   private _latestRadioRx: Record<string, unknown> | null = null;
+  /** Keep the raw RX_LOG_DATA envelope so a route can be rebuilt when contacts/coordinates arrive later. */
+  private _latestRadioEventData: Record<string, unknown> | null = null;
 
   static styles = css`
     :host {
@@ -761,12 +763,26 @@ export class MapPage extends LitElement {
       id: ++this._rawRadioRowId, time: date.toLocaleTimeString(), type, route,
       path: hashes.length ? hashes.join(' → ') : '—',
       message,
+      coordinates: this._routeCoordinateStatus(hashes),
       snr: this._rawNumber(snr, snr !== undefined ? ' dB' : ''),
       rssi: this._rawNumber(rssi, rssi !== undefined ? ' dBm' : ''),
       noise: this._rawNumber(noise, noise !== undefined ? ' dBm' : ''),
       telemetry: telemetryEntries.length ? telemetryEntries.join(' · ') : '—',
     };
     this._rawRadioRows = [row, ...this._rawRadioRows].slice(0, 100);
+  }
+
+  private _routeCoordinateStatus(hashes: string[]): string {
+    if (!hashes.length) return '—';
+    const located = hashes.reduce((count, hash) => {
+      const contact = this._findContactByHash(hash);
+      return count + (contact && hasCoordinates(contact) ? 1 : 0);
+    }, 0);
+    if (located >= 2) {
+      const missing = hashes.length - located;
+      return missing ? `✓ ${located}/${hashes.length} (интерполяция ${missing})` : `✓ ${located}/${hashes.length}`;
+    }
+    return `✗ ${located}/${hashes.length}`;
   }
 
   private _recordFloodGraph(data: Record<string, unknown>, rx?: Record<string, unknown>) {
@@ -960,7 +976,11 @@ export class MapPage extends LitElement {
       // meshcore-ha is delivering to the panel. Advert-specific details are
       // logged separately below.
       this._recordRawRadioEvent(data, rx);
-      if (this._showMessage && eventType === 'RX_LOG_DATA' && rx) this._recordFloodGraph(data, rx);
+      if (eventType === 'RX_LOG_DATA' && rx) {
+        this._latestRadioEventData = { ...data };
+        this._latestRadioRx = { ...rx, timestamp: data.timestamp };
+        if (this._showMessage) this._recordFloodGraph(data, rx);
+      }
 
       this._debugRadioEvent('RAW_EVENT received', data, {
         eventType,
@@ -980,7 +1000,6 @@ export class MapPage extends LitElement {
 
       if (!this._showMessage || eventType !== 'RX_LOG_DATA' || !rx) return;
 
-      this._latestRadioRx = { ...rx, timestamp: data.timestamp };
       const payloadType = Number(rx.payload_type);
       const isTextPacket = payloadType === 2 || payloadType === 5 || payloadTypeName === 'TEXT_MSG' || payloadTypeName === 'GRP_TXT';
       if (payloadType === 4) {
@@ -1106,7 +1125,13 @@ export class MapPage extends LitElement {
           }
         } else {
           this._messageMap = null;
-          if (this._graphEdges.length) this._fitGraph();
+          // Rebuild technical routes after the contact store changes. RX_LOG_DATA
+          // can arrive before the corresponding contacts/coordinates are synced.
+          if (this._latestRadioEventData && this._latestRadioRx) {
+            this._recordFloodGraph(this._latestRadioEventData, this._latestRadioRx);
+          } else if (this._graphEdges.length) {
+            this._fitGraph();
+          }
         }
       } else {
         this._fitAll();
@@ -2176,11 +2201,11 @@ export class MapPage extends LitElement {
         <section class="radio-table" aria-label="MeshCore RAW_EVENT radio telemetry">
           ${this._rawRadioRows.length ? html`
             <table>
-              <thead><tr><th>Время</th><th>Тип</th><th>Маршрут</th><th>Путь</th><th>Сообщение</th><th>SNR</th><th>RSSI</th><th>Шум</th><th>Радио / пакет</th></tr></thead>
+              <thead><tr><th>Время</th><th>Тип</th><th>Маршрут</th><th>Путь</th><th>Сообщение</th><th>Координаты</th><th>SNR</th><th>RSSI</th><th>Шум</th><th>Радио / пакет</th></tr></thead>
               <tbody>
                 ${this._rawRadioRows.map((row, index) => html`
                   <tr class=${index === 0 ? 'latest' : ''}>
-                    <td>${row.time}</td><td>${row.type}</td><td>${row.route}</td><td class="path">${row.path}</td><td>${row.message === '—' ? nothing : row.message}</td>
+                    <td>${row.time}</td><td>${row.type}</td><td>${row.route}</td><td class="path">${row.path}</td><td>${row.message === '—' ? nothing : row.message}</td><td>${row.coordinates}</td>
                     <td>${row.snr}</td><td>${row.rssi}</td><td>${row.noise}</td>
                     <td class=${row.telemetry === '—' ? 'muted' : ''}>${row.telemetry}</td>
                   </tr>
