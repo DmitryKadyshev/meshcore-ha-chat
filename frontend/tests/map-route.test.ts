@@ -855,6 +855,38 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     expect(priv(el)._selectedRadioRowId).toBeNull();
   });
 
+  it('rebuilds a TEXT_MSG route from the RAW_EVENT snapshot when the row is clicked', async () => {
+    el.contacts = [
+      NODE_5053,
+      makeContact('0a18', 'Node 0a18', 50.5, 10.5),
+      makeContact('d69c', 'Node d69c', 51.0, 11.0),
+    ];
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        payload_type: 2,
+        payload_typename: 'TEXT_MSG',
+        path_nodes: ['5053', '0a18', 'd69c'],
+        path_len: 3,
+        path_hash_size: 2,
+      }),
+    });
+
+    const row = priv(el)._rawRadioRows[0];
+    expect(row.eventData).toBeTruthy();
+    expect(row.rxData).toBeTruthy();
+
+    await el.updateComplete;
+    (el.shadowRoot?.querySelector('.radio-table tbody tr') as HTMLElement)?.click();
+
+    await el.updateComplete;
+    expect(priv(el)._selectedRadioRowId).toBe(row.id);
+    expect(priv(el)._graphEdges).toHaveLength(2);
+    expect(priv(el)._graphEdges[0].from.name).toBe('Node 5053');
+    expect(priv(el)._graphEdges[1].to.name).toBe('Node d69c');
+  });
+
   it('reports coordinate availability for the RAW_EVENT route', () => {
     fireRawEvent({
       event_type: 'RX_LOG_DATA',
