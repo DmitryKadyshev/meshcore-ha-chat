@@ -25,7 +25,7 @@ interface GraphEdge {
   lastSeen: number; flowStartedAt: number; snr?: number; rssi?: number;
 }
 
-interface RawRadioRow { id: number; type: string; route: string; path: string; message?: string; coordinates: string; telemetry: string; hashes: string[]; payloadType?: number; payloadName?: string; }
+interface RawRadioRow { id: number; type: string; route: string; path: string; message?: string; coordinates: string; telemetry: string; hashes: string[]; payloadType?: number; payloadName?: string; eventData?: Record<string, unknown>; rxData?: Record<string, unknown>; }
 
 interface PrivateMapPage {
   _showMessage: boolean;
