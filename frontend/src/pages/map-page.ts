@@ -789,7 +789,7 @@ export class MapPage extends LitElement {
     // against the current contact store and use the exact same graph builder
     // as a live RX_LOG_DATA packet. This keeps historical rows and live events
     // visually identical.
-    this._graphEdges = this._buildGraphEdges(row.hashes, row.id, row.snr, row.rssi);
+    this._graphEdges = this._buildGraphEdges(row.hashes, row.snr, row.rssi);
     if (this._graphEdges.length) {
       this._fitGraph();
       this._startGraphAnimation();
@@ -798,7 +798,6 @@ export class MapPage extends LitElement {
 
   private _buildGraphEdges(
     hashes: string[],
-    id: number | string,
     snrValue?: string | number,
     rssiValue?: string | number,
   ): GraphEdge[] {
@@ -856,7 +855,6 @@ export class MapPage extends LitElement {
     const hashes = sourceHashes.length ? sourceHashes : this._pathHashes(data);
     const graphEdges = this._buildGraphEdges(
       hashes,
-      String(data.timestamp ?? Date.now()),
       typeof source.snr === 'string' || typeof source.snr === 'number' ? source.snr : (typeof data.snr === 'string' || typeof data.snr === 'number' ? data.snr : undefined),
       typeof source.rssi === 'string' || typeof source.rssi === 'number' ? source.rssi : (typeof data.rssi === 'string' || typeof data.rssi === 'number' ? data.rssi : undefined),
     );
