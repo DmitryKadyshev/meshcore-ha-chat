@@ -820,12 +820,11 @@ export class MapPage extends LitElement {
 
   private _showRadioRow(row: RawRadioRow) {
     this._selectedRadioRowId = row.id;
-    // A historical RAW_EVENT selection is a technical route selection, not a
-    // message-bubble selection. Force the graph mode and clear any stale
-    // message overlay before rebuilding the selected packet.
-    this._showMessage = true;
+    // A historical RAW_EVENT selection is a technical route selection.
+    // Do not enter message-overlay mode: that mode has its own viewport
+    // lifecycle and can overwrite the technical graph after the click.
+    this._showMessage = false;
     this._messageMap = null;
-    this.requestUpdate();
 
     // A table row is a historical snapshot of the received path. Resolve it
     // against the current contact store and use the exact same graph builder
