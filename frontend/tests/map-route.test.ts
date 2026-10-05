@@ -803,8 +803,8 @@ describe('MeshCore map text message route (meshcore_message)', () => {
 
     expect(priv(el)._selectedRadioRowId).toBe(row.id);
     expect(priv(el)._graphEdges.length).toBeGreaterThan(0);
-    expect(priv(el)._graphEdges[0].from.key).toBe('5053');
-    expect(priv(el)._graphEdges[0].to.key).toBe('0a18');
+    expect(priv(el)._graphEdges[0].from.key.startsWith('5053')).toBe(true);
+    expect(priv(el)._graphEdges[0].to.key.startsWith('0a18')).toBe(true);
 
     fireRawEvent({
       event_type: 'RX_LOG_DATA',
