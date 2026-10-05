@@ -394,6 +394,8 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
   });
 
   it('renders the selected RAW_EVENT graph after clicking a row', async () => {
+    const advert = makeContact('abcd', 'Advert Node', 53.0, 13.0);
+    el.contacts = [...CONTACTS, advert];
     fireRawEvent({
       event_type: 'RX_LOG_DATA',
       timestamp: 1759000000,
@@ -401,10 +403,10 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
         payload_type: 4,
         payload_typename: 'ADVERT',
         route_typename: 'FLOOD',
-        adv_key: NODE_565D.public_key,
-        adv_name: NODE_565D.adv_name,
-        adv_lat: NODE_565D.adv_lat,
-        adv_lon: NODE_565D.adv_lon,
+        adv_key: advert.public_key,
+        adv_name: advert.adv_name,
+        adv_lat: advert.adv_lat,
+        adv_lon: advert.adv_lon,
       }),
     });
 
