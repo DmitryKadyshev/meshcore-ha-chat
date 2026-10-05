@@ -76,6 +76,7 @@ export class MapPage extends LitElement {
   @state() private _graphEdges: GraphEdge[] = [];
   private _rawRadioRowId = 0;
   private _graphAnimationFrame?: number;
+  private _graphRefreshToken = 0;
   private static readonly GRAPH_TTL_MS = 5 * 60 * 1000;
 
   private _mapEl?: HTMLElement;
@@ -876,20 +877,39 @@ export class MapPage extends LitElement {
   }
 
   private async _refreshGraphView(reason: string) {
+    const refreshToken = ++this._graphRefreshToken;
     if (!this._graphEdges.length) return;
 
-    // Graph geometry depends on the rendered map size. Wait for Lit to paint
-    // the new graph layer before fitting and starting its animation; otherwise
-    // the first RX event can calculate bounds against a 0/old-size viewport.
+    // Graph geometry depends on the actual rendered map viewport. Wait for
+    // Lit first, then refresh the size directly as a fallback because the
+    // ResizeObserver callback can lag behind the first RX_LOG_DATA render.
     await this.updateComplete;
+    if (refreshToken !== this._graphRefreshToken || !this._graphEdges.length) return;
 
-    if (!this._graphEdges.length) return;
     if (!this._mapSize.width || !this._mapSize.height) {
-      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+      const map = this._mapEl || this.shadowRoot?.querySelector('.map') as HTMLElement | null;
+      const rect = map?.getBoundingClientRect();
+      if (rect && rect.width > 0 && rect.height > 0) {
+        this._mapSize = { width: rect.width, height: rect.height };
+        await this.updateComplete;
+      } else {
+        await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+        if (refreshToken !== this._graphRefreshToken || !this._graphEdges.length) return;
+      }
     }
 
+    if (!this._mapSize.width || !this._mapSize.height) return;
+
+    // Fit after the graph layer exists and the map dimensions are known.
+    // _fitGraph updates center/zoom, so wait for that render before starting
+    // the packet animation.
     this._fitGraph();
     await this.updateComplete;
+    if (refreshToken !== this._graphRefreshToken || !this._graphEdges.length) return;
+
+    await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    if (refreshToken !== this._graphRefreshToken || !this._graphEdges.length) return;
+
     this._startGraphAnimation();
 
     this._debugRadioEvent('RADIO graph view refreshed', {
@@ -899,6 +919,7 @@ export class MapPage extends LitElement {
       mapSize: this._mapSize,
       center: this._center,
       zoom: this._zoom,
+      graphLayerRendered: Boolean(this.shadowRoot?.querySelector('.graph-layer')),
       edges: this._graphEdges.map(edge => ({
         from: { name: edge.from.name, lat: edge.from.lat, lon: edge.from.lon },
         to: { name: edge.to.name, lat: edge.to.lat, lon: edge.to.lon },
