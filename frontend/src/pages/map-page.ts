@@ -16,7 +16,7 @@ interface MapTile { x: number; y: number; left: number; top: number; src: string
 interface TileTransition { tiles: MapTile[]; scale: number; }
 interface RawRadioRow {
   id: number; time: string; type: string; route: string; path: string;
-  snr: string; rssi: string; noise: string; telemetry: string;
+  message: string; snr: string; rssi: string; noise: string; telemetry: string;
 }
 interface GraphEdge {
   id: string;
@@ -749,6 +749,8 @@ export class MapPage extends LitElement {
     const hashes = payload ? this._pathHashes(payload) : [];
     const type = String(source.payload_typename || source.payload_type || data.event_type || 'UNKNOWN').replace(/^EventType\./, '');
     const route = String(source.route_typename || '—');
+    const rawMessage = source.message ?? source.text ?? data.message ?? data.text;
+    const message = rawMessage === undefined || rawMessage === null || rawMessage === '' ? '—' : String(rawMessage);
     const snr = source.snr; const rssi = source.rssi;
     const noise = source.noise ?? source.noise_floor ?? source.noise_dbm;
     const telemetryKeys = /^(freq|frequency|bandwidth|bw|sf|spreading_factor|coding_rate|cr|tx_power|channel|payload_length|packet_len|pkt_hash|header)$/i;
@@ -758,6 +760,7 @@ export class MapPage extends LitElement {
     const row: RawRadioRow = {
       id: ++this._rawRadioRowId, time: date.toLocaleTimeString(), type, route,
       path: hashes.length ? hashes.join(' → ') : '—',
+      message,
       snr: this._rawNumber(snr, snr !== undefined ? ' dB' : ''),
       rssi: this._rawNumber(rssi, rssi !== undefined ? ' dBm' : ''),
       noise: this._rawNumber(noise, noise !== undefined ? ' dBm' : ''),
@@ -854,7 +857,8 @@ export class MapPage extends LitElement {
       const [x1, y1] = project(minLat, minLon, z); const [x2, y2] = project(maxLat, maxLon, z);
       if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { best = z; break; }
     }
-    this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best + 1));
+    // Leave one additional zoom level of margin so route nodes, arrowheads, labels and animated packets are not clipped at the viewport edges.
+    this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best - 1));
   }
 
   private _startGraphAnimation() {
@@ -1458,7 +1462,8 @@ export class MapPage extends LitElement {
       const [x1, y1] = project(minLat, minLon, z); const [x2, y2] = project(maxLat, maxLon, z);
       if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { best = z; break; }
     }
-    this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best + 1));
+    // Leave one additional zoom level of margin so route nodes, arrowheads, labels and animated packets are not clipped at the viewport edges.
+    this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best - 1));
   }
 
   /**
@@ -2171,11 +2176,11 @@ export class MapPage extends LitElement {
         <section class="radio-table" aria-label="MeshCore RAW_EVENT radio telemetry">
           ${this._rawRadioRows.length ? html`
             <table>
-              <thead><tr><th>Время</th><th>Тип</th><th>Маршрут</th><th>Путь</th><th>SNR</th><th>RSSI</th><th>Шум</th><th>Радио / пакет</th></tr></thead>
+              <thead><tr><th>Время</th><th>Тип</th><th>Маршрут</th><th>Путь</th><th>Сообщение</th><th>SNR</th><th>RSSI</th><th>Шум</th><th>Радио / пакет</th></tr></thead>
               <tbody>
                 ${this._rawRadioRows.map((row, index) => html`
                   <tr class=${index === 0 ? 'latest' : ''}>
-                    <td>${row.time}</td><td>${row.type}</td><td>${row.route}</td><td class="path">${row.path}</td>
+                    <td>${row.time}</td><td>${row.type}</td><td>${row.route}</td><td class="path">${row.path}</td><td>${row.message === '—' ? nothing : row.message}</td>
                     <td>${row.snr}</td><td>${row.rssi}</td><td>${row.noise}</td>
                     <td class=${row.telemetry === '—' ? 'muted' : ''}>${row.telemetry}</td>
                   </tr>
