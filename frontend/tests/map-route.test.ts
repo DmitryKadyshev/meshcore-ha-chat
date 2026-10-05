@@ -363,6 +363,62 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     expect(priv(el)._graphEdges).toHaveLength(2);
   });
 
+  it('builds the complete ADVERT FLOOD route including the advertised node', () => {
+    const advert = makeContact('abcd', 'Advert Node', 53.0, 13.0);
+    el.contacts = [...CONTACTS, advert];
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        payload_type: 4,
+        payload_typename: 'ADVERT',
+        route_typename: 'FLOOD',
+        path_len: 3,
+        path_hash_size: 2,
+        path: '5053db94565d',
+        path_nodes: ['5053', 'db94', '565d'],
+        adv_key: advert.public_key,
+        adv_name: advert.adv_name,
+        adv_lat: advert.adv_lat,
+        adv_lon: advert.adv_lon,
+      }),
+    });
+
+    const edges = priv(el)._graphEdges;
+    expect(edges).toHaveLength(3);
+    expect(edges.map(edge => [edge.from.name, edge.to.name])).toEqual([
+      ['Node 5053', 'Node DB94'],
+      ['Node DB94', 'Node 565D'],
+      ['Node 565D', 'Advert Node'],
+    ]);
+  });
+
+  it('renders the selected RAW_EVENT graph after clicking a row', async () => {
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        payload_type: 4,
+        payload_typename: 'ADVERT',
+        route_typename: 'FLOOD',
+        adv_key: NODE_565D.public_key,
+        adv_name: NODE_565D.adv_name,
+        adv_lat: NODE_565D.adv_lat,
+        adv_lon: NODE_565D.adv_lon,
+      }),
+    });
+
+    const row = priv(el)._rawRadioRows[0];
+    await el.updateComplete;
+    (el.shadowRoot?.querySelector('.radio-table tbody tr') as HTMLElement)?.click();
+    await el.updateComplete;
+
+    expect(priv(el)._selectedRadioRowId).toBe(row.id);
+    expect(priv(el)._graphEdges).toHaveLength(3);
+    expect(el.shadowRoot?.querySelector('.graph-layer')).toBeTruthy();
+    expect(el.shadowRoot?.querySelectorAll('.graph-edge')).toHaveLength(3);
+  });
+
   it('renders a long repeated-node ACK/FLOOD path when all hops have coordinates', () => {
     const prefixes = ['0a18', 'd69c', '5f1c', '2782', 'c2c9', '7300', '0dbb', '79d8', '2121'];
     el.contacts = prefixes.map((prefix, index) =>
