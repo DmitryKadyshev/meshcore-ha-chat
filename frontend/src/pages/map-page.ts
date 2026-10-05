@@ -786,38 +786,46 @@ export class MapPage extends LitElement {
     this._messageMap = null;
 
     // A table row is a historical snapshot of the received path. Resolve it
-    // against the current contact store so clicking an old packet can redraw
-    // its route even after newer packets arrived.
-    if (row.hashes.length >= 2) {
-      const points = this._resolvePathPoints(row.hashes);
-      const now = performance.now();
-      const wallNow = Date.now();
-      const snr = Number.parseFloat(row.snr);
-      const rssi = Number.parseFloat(row.rssi);
-      const edges: GraphEdge[] = [];
-      for (let i = 0; i < points.length - 1; i += 1) {
-        const from = points[i];
-        const to = points[i + 1];
-        if (!from || !to || from.key === to.key) continue;
-        edges.push({
-          id: `${from.key}|${to.key}|${row.id}|${i}`,
-          from,
-          to,
-          count: 1,
-          lastSeen: wallNow,
-          flowStartedAt: now,
-          snr: Number.isFinite(snr) ? snr : undefined,
-          rssi: Number.isFinite(rssi) ? rssi : undefined,
-        });
-      }
-      this._graphEdges = edges;
-      if (edges.length) {
-        this._fitGraph();
-        this._startGraphAnimation();
-      }
-    } else {
-      this._graphEdges = [];
+    // against the current contact store and use the exact same graph builder
+    // as a live RX_LOG_DATA packet. This keeps historical rows and live events
+    // visually identical.
+    this._graphEdges = this._buildGraphEdges(row.hashes, row.id, row.snr, row.rssi);
+    if (this._graphEdges.length) {
+      this._fitGraph();
+      this._startGraphAnimation();
     }
+  }
+
+  private _buildGraphEdges(
+    hashes: string[],
+    id: number | string,
+    snrValue?: string | number,
+    rssiValue?: string | number,
+  ): GraphEdge[] {
+    if (hashes.length < 2) return [];
+    const points = this._resolvePathPoints(hashes);
+    const now = performance.now();
+    const wallNow = Date.now();
+    const snr = Number(snrValue);
+    const rssi = Number(rssiValue);
+    const edges: GraphEdge[] = [];
+
+    for (let i = 0; i < points.length - 1; i += 1) {
+      const from = points[i];
+      const to = points[i + 1];
+      if (!from || !to || from.key === to.key) continue;
+      edges.push({
+        id: `${from.key}|${to.key}|${id}|${i}`,
+        from,
+        to,
+        count: 1,
+        lastSeen: wallNow,
+        flowStartedAt: now,
+        snr: Number.isFinite(snr) ? snr : undefined,
+        rssi: Number.isFinite(rssi) ? rssi : undefined,
+      });
+    }
+    return edges;
   }
 
   private _routeCoordinateStatus(hashes: string[]): string {
@@ -838,47 +846,20 @@ export class MapPage extends LitElement {
     const payloadType = Number(source.payload_type ?? data.payloadType);
     const payloadName = String(source.payload_typename ?? data.payloadTypeName ?? '').replace(/^EventType\./i, '').toUpperCase();
 
-    // Text packets use the message route. All other flood packets are shown
-    // as a technical route graph without a message bubble.
-    if (payloadType === 2 || payloadType === 5 || payloadName === 'TEXT_MSG' || payloadName === 'GRP_TXT') {
-      this._graphEdges = [];
-      return;
-    }
-
+    // Every RX_LOG_DATA packet with a path gets the same technical route
+    // graph, including TEXT_MSG / GRP_TXT. Text packets additionally get their
+    // message bubble below; the graph must not depend on the payload type.
     const routeType = String(source.route_typename ?? source.routeType ?? data.routeType ?? '')
       .replace(/^EventType\./i, '').toUpperCase();
 
     const sourceHashes = this._pathHashes(source);
     const hashes = sourceHashes.length ? sourceHashes : this._pathHashes(data);
-    if (hashes.length < 2) {
-      this._graphEdges = [];
-      return;
-    }
-
-    const points = this._resolvePathPoints(hashes);
-    const now = performance.now();
-    const wallNow = Date.now();
-    const snr = Number(source.snr ?? data.snr);
-    const rssi = Number(source.rssi ?? data.rssi);
-    const edges: GraphEdge[] = [];
-
-    for (let i = 0; i < points.length - 1; i += 1) {
-      const from = points[i];
-      const to = points[i + 1];
-      if (!from || !to || from.key === to.key) continue;
-      edges.push({
-        id: from.key + '|' + to.key,
-        from,
-        to,
-        count: 1,
-        lastSeen: wallNow,
-        flowStartedAt: now,
-        snr: Number.isFinite(snr) ? snr : undefined,
-        rssi: Number.isFinite(rssi) ? rssi : undefined,
-      });
-    }
-
-    this._graphEdges = edges;
+    this._graphEdges = this._buildGraphEdges(
+      hashes,
+      String(data.timestamp ?? Date.now()),
+      source.snr ?? data.snr,
+      source.rssi ?? data.rssi,
+    );
     // BUG-12: fit as soon as the graph has points — waiting for a later
     // render/update cycle could leave the map on stale or default bounds.
     if (edges.length) {
