@@ -589,6 +589,45 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     expect(labels.some(text => text?.includes('Node 5053'))).toBe(true);
   });
 
+  it('wires arrowhead markers and packet motion paths imperatively after render', async () => {
+    // Regression for the shipped-bug where nodes/arrows stayed hidden: the
+    // paint-server references (marker url(#id), <mpath href>) must be applied
+    // via setAttribute() in updated(), never left solely to Lit template
+    // bindings that can be lost through bundle transpilation.
+    fireMessageEvent({
+      entity_id: 'sensor.meshcore_5053aa_messages',
+      sender_name: 'Node 565D',
+      pubkey_prefix: '565daa55',
+      message: 'hello mesh',
+      timestamp: 1759000000,
+      rx_log_data: [{
+        path_len: 2,
+        path_hash_size: 2,
+        path: '5053db94',
+        path_nodes: ['5053', 'db94'],
+      }],
+    });
+    await el.updateComplete;
+
+    const connectors = [...el.shadowRoot!.querySelectorAll('line.message-route')];
+    expect(connectors.length).toBe(2);
+    connectors.forEach((line, index) => {
+      expect(line.id).toBe(`message-route-line-${index}`);
+      expect(line.getAttribute('marker-end')).toBe('url(#message-route-arrow)');
+    });
+    // The marker def itself is created imperatively inside the layer's defs.
+    const marker = el.shadowRoot!.querySelector('defs #message-route-arrow');
+    expect(marker).toBeTruthy();
+    // Each travelling packet animates along its connector line.
+    const packets = [...el.shadowRoot!.querySelectorAll('circle.message-route-packet')];
+    expect(packets.length).toBe(2);
+    packets.forEach((packet, index) => {
+      const mpath = packet.querySelector('mpath');
+      expect(mpath).toBeTruthy();
+      expect(mpath!.getAttribute('href')).toBe(`#message-route-line-${index}`);
+    });
+  });
+
   it('shows the sender node icon even for a single-point (direct) route', async () => {
     fireMessageEvent({
       entity_id: 'sensor.meshcore_5053aa_messages',
