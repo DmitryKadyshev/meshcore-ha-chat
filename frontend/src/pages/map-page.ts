@@ -721,9 +721,29 @@ export class MapPage extends LitElement {
     return Number.isFinite(number) ? String(number) + suffix : String(value);
   }
 
+  private _rawPayloadLength(source: Record<string, unknown>): number | null {
+    // MeshCore reports the packet payload size under several key spellings.
+    const keys = ['payload_length', 'payload_len', 'packet_len', 'pkt_len', 'length'];
+    for (const key of keys) {
+      if (!(key in source)) continue;
+      const value = source[key];
+      if (value === undefined || value === null || value === '') continue;
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) return numeric;
+    }
+    return null;
+  }
+
   private _recordRawRadioEvent(data: Record<string, unknown>, rx?: Record<string, unknown>) {
     const payload = rx || (data.payload && typeof data.payload === 'object' ? data.payload as Record<string, unknown> : undefined);
     const source = payload || data;
+
+    // Filter out every event whose payload_length is empty/absent — those are
+    // non-informative radio rows (keep-alives, incomplete log records) that
+    // only add noise to the RAW_EVENT table below the map.
+    const payloadLength = this._rawPayloadLength(source) ?? this._rawPayloadLength(data);
+    if (payloadLength === null || payloadLength <= 0) return;
+
     const hashes = payload ? this._pathHashes(payload) : [];
     const type = String(source.payload_typename || source.payload_type || data.event_type || 'UNKNOWN').replace(/^EventType\./, '');
     const route = String(source.route_typename || '—');
