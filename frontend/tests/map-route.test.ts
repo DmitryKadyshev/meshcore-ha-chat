@@ -779,6 +779,11 @@ describe('MeshCore map text message route (meshcore_message)', () => {
   });
 
   it('clicking a RAW_EVENT row redraws that historical route', async () => {
+    el.contacts = [
+      NODE_5053,
+      makeContact('0a18', 'Node 0a18', 50.5, 10.5),
+      makeContact('d69c', 'Node d69c', 51.0, 11.0),
+    ];
     fireRawEvent({
       event_type: 'RX_LOG_DATA',
       timestamp: 1759000000,
