@@ -943,6 +943,14 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     expect(priv(el)._graphEdges).toHaveLength(2);
     expect(priv(el)._graphEdges[0].from.name).toBe('Node 5053');
     expect(priv(el)._graphEdges[1].to.name).toBe('Node d69c');
+    expect(el.shadowRoot?.querySelector('.graph-layer')).toBeTruthy();
+    expect(el.shadowRoot?.querySelectorAll('.graph-edge')).toHaveLength(2);
+    const rendered = [...(el.shadowRoot?.querySelectorAll('.graph-edge') || [])];
+    for (const line of rendered) {
+      const values = ['x1', 'y1', 'x2', 'y2'].map(name => Number(line.getAttribute(name)));
+      expect(values.every(Number.isFinite)).toBe(true);
+      expect(values[0] !== values[2] || values[1] !== values[3]).toBe(true);
+    }
   });
 
   it('reports coordinate availability for the RAW_EVENT route', () => {
