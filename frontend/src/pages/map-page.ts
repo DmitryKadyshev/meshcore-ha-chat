@@ -791,8 +791,7 @@ export class MapPage extends LitElement {
     // visually identical.
     this._graphEdges = this._buildGraphEdges(row.hashes, row.snr, row.rssi);
     if (this._graphEdges.length) {
-      this._fitGraph();
-      this._startGraphAnimation();
+      void this._refreshGraphView('RAW_EVENT row');
     }
   }
 
@@ -859,11 +858,8 @@ export class MapPage extends LitElement {
       typeof source.rssi === 'string' || typeof source.rssi === 'number' ? source.rssi : (typeof data.rssi === 'string' || typeof data.rssi === 'number' ? data.rssi : undefined),
     );
     this._graphEdges = graphEdges;
-    // BUG-12: fit as soon as the graph has points — waiting for a later
-    // render/update cycle could leave the map on stale or default bounds.
     if (graphEdges.length) {
-      this._fitGraph();
-      this._startGraphAnimation();
+      void this._refreshGraphView('RX_LOG_DATA');
     }
     this._debugRadioEvent('RADIO route graph built', data, {
       payloadType,
@@ -871,7 +867,42 @@ export class MapPage extends LitElement {
       routeType,
       hashes,
       resolved: graphEdges.flatMap(edge => [edge.from.name, edge.to.name]),
+      resolvedPoints: graphEdges.flatMap(edge => [
+        { name: edge.from.name, lat: edge.from.lat, lon: edge.from.lon },
+        { name: edge.to.name, lat: edge.to.lat, lon: edge.to.lon },
+      ]),
       edgeCount: graphEdges.length,
+    });
+  }
+
+  private async _refreshGraphView(reason: string) {
+    if (!this._graphEdges.length) return;
+
+    // Graph geometry depends on the rendered map size. Wait for Lit to paint
+    // the new graph layer before fitting and starting its animation; otherwise
+    // the first RX event can calculate bounds against a 0/old-size viewport.
+    await this.updateComplete;
+
+    if (!this._graphEdges.length) return;
+    if (!this._mapSize.width || !this._mapSize.height) {
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()));
+    }
+
+    this._fitGraph();
+    await this.updateComplete;
+    this._startGraphAnimation();
+
+    this._debugRadioEvent('RADIO graph view refreshed', {
+      reason,
+      graphEdgeCount: this._graphEdges.length,
+    }, {
+      mapSize: this._mapSize,
+      center: this._center,
+      zoom: this._zoom,
+      edges: this._graphEdges.map(edge => ({
+        from: { name: edge.from.name, lat: edge.from.lat, lon: edge.from.lon },
+        to: { name: edge.to.name, lat: edge.to.lat, lon: edge.to.lon },
+      })),
     });
   }
 
