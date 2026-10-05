@@ -589,6 +589,50 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     expect(labels.some(text => text?.includes('Node 5053'))).toBe(true);
   });
 
+  it('renders route geometry in the SVG namespace with real coordinates', async () => {
+    fireMessageEvent({
+      entity_id: 'sensor.meshcore_5053aa_messages',
+      sender_name: 'Node 565D',
+      pubkey_prefix: '565daa55',
+      message: 'hello mesh',
+      timestamp: 1759000000,
+      rx_log_data: [{
+        path_len: 2,
+        path_hash_size: 2,
+        path: '5053db94',
+        path_nodes: ['5053', 'db94'],
+      }],
+    });
+    await el.updateComplete;
+
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const connectors = [...el.shadowRoot!.querySelectorAll('line.message-route')];
+    expect(connectors).toHaveLength(2);
+    connectors.forEach(line => {
+      expect(line.namespaceURI).toBe(SVG_NS);
+      const values = ['x1', 'y1', 'x2', 'y2'].map(name => Number(line.getAttribute(name)));
+      values.forEach(value => expect(Number.isFinite(value)).toBe(true));
+      expect(values[0] !== values[2] || values[1] !== values[3]).toBe(true);
+    });
+
+    const nodes = [...el.shadowRoot!.querySelectorAll('circle.message-node')];
+    expect(nodes).toHaveLength(3);
+    nodes.forEach(node => {
+      expect(node.namespaceURI).toBe(SVG_NS);
+      expect(Number.isFinite(Number(node.getAttribute('cx')))).toBe(true);
+      expect(Number.isFinite(Number(node.getAttribute('cy')))).toBe(true);
+      expect(Number(node.getAttribute('r'))).toBeGreaterThan(0);
+    });
+
+    const labels = [...el.shadowRoot!.querySelectorAll('text.message-hop-label')];
+    expect(labels).toHaveLength(3);
+    labels.forEach(label => {
+      expect(label.namespaceURI).toBe(SVG_NS);
+      expect(Number.isFinite(Number(label.getAttribute('x')))).toBe(true);
+      expect(Number.isFinite(Number(label.getAttribute('y')))).toBe(true);
+    });
+  });
+
   it('wires arrowhead markers and packet motion paths imperatively after render', async () => {
     // Regression for the shipped-bug where nodes/arrows stayed hidden: the
     // paint-server references (marker url(#id), <mpath href>) must be applied
