@@ -333,7 +333,7 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     expect(vertices.length).toBe(3);
   });
 
-  it('does not zoom out to the minimum level when fitting the graph (BUG-1)', () => {
+  it('keeps extra viewport margin when fitting the graph', () => {
     fireRawEvent({
       event_type: 'RX_LOG_DATA',
       timestamp: 1759000000,
@@ -342,13 +342,11 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
 
     const p = priv(el);
     expect(p._graphEdges.length).toBeGreaterThan(0);
-    // BUG-1 regression: previously empty bounds collapsed the map to MIN_ZOOM.
+    // The route fits at a higher zoom, but the UI deliberately leaves one
+    // additional zoom level of margin so nodes, arrows and labels are not clipped.
     expect(p._zoom).toBeGreaterThan(MIN_ZOOM);
     expect(p._zoom).toBeLessThan(MAX_ZOOM);
-    // A 2°×2° route on an 800×600 viewport fits at zoom 7 (world span at z7
-    // is 32768px, so 2° ≈ 364px ≤ the padded bounds); the fit adds one
-    // padding level, so the map lands at zoom 8 — never at the world view.
-    expect(p._zoom).toBe(8);
+    expect(p._zoom).toBe(6);
     // Centered on the route midpoint, not the world/default center.
     expect(p._center[0]).toBeCloseTo(51.0, 5);
     expect(p._center[1]).toBeCloseTo(11.0, 5);
