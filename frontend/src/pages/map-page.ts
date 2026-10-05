@@ -1074,6 +1074,10 @@ export class MapPage extends LitElement {
       this._setupMessageSubscriptions();
     }
     this._applyPanTransform();
+    // Paint-server attributes (marker arrowheads, mpath motion refs) are set
+    // imperatively after every render so the route arrows and packets can
+    // never be lost to template/bundle quirks.
+    this._wireRouteOverlay();
 
     if (changedProperties.has('_graphEdges')) {
       this._startGraphAnimation();
@@ -1489,33 +1493,87 @@ export class MapPage extends LitElement {
       }
     });
 
-    return html`
-      ${segments.map((segment, index) => {
+    // All overlay elements live inside ONE addressable <g>. The map pan
+    // gesture applies a translate3d() transform to .map-content; CSS
+    // transforms on an HTML container make SVG paint-server references
+    // (marker url(#id), <mpath>) fragile, so those attributes are applied
+    // imperatively after every render by _wireRouteOverlay() instead of
+    // being bound through Lit templates.
+    const segmentsTemplate = segments.map((segment, index) => {
         const from = this._mapPoint(segment.from.lat, segment.from.lon);
         const to = this._mapPoint(segment.to.lat, segment.to.lon);
-        const lineId = `message-route-line-${index}`;
         return html`
-          <line id=${lineId}
+          <line data-route-line=${String(index)}
             class="message-route ${segment.secondary ? "secondary" : ""}"
-            x1=${from.left} y1=${from.top} x2=${to.left} y2=${to.top}
-            marker-end="url(#message-route-arrow)"></line>
+            x1=${from.left} y1=${from.top} x2=${to.left} y2=${to.top}></line>
           <circle class="message-route-packet ${segment.secondary ? "secondary" : ""}" r="5">
-            <animateMotion dur=${segment.secondary ? "1.4s" : "1.1s"} repeatCount="indefinite" rotate="auto">
-              <mpath href=${`#${lineId}`}></mpath>
-            </animateMotion>
+            <animateMotion dur=${segment.secondary ? "1.4s" : "1.1s"} repeatCount="indefinite" rotate="auto"></animateMotion>
           </circle>
         `;
-      })}
-      ${[...nodeMap.values()].map(({ point, hop, sender }) => {
+      });
+
+      const nodesTemplate = [...nodeMap.values()].map(({ point, hop, sender }) => {
         const screen = this._mapPoint(point.lat, point.lon);
         return html`
           <circle class="message-node ${sender ? "sender" : ""}" cx=${screen.left} cy=${screen.top} r=${sender ? 10 : 8}></circle>
           <circle class="message-node-core ${sender ? "sender" : ""}" cx=${screen.left} cy=${screen.top} r="4"></circle>
           <text class="message-hop-label" x=${screen.left + 11} y=${screen.top - 9}>${sender ? "Sender" : `${hop}. ${point.name}`}</text>
         `;
-      })}
-    `;
+      });
+
+    return html`<g class="message-route-overlay">${segmentsTemplate}${nodesTemplate}</g>`;
   }
+
+  /**
+   * Re-apply paint-server references (arrowhead markers, packet motion
+   * paths) after each render. Setting them via setAttribute() guarantees the
+   * arrowheads and animated packets stay wired up regardless of how the
+   * shipped bundle was transpiled/minified — template-bound url(#…) strings
+   * proved unreliable in production WebViews, hiding exactly these icons.
+   */
+  private _wireRouteOverlay() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    const layer = root.querySelector('svg.message-route-layer');
+    if (!layer || !layer.querySelector('.message-route-overlay')) return;
+    // The arrowhead paint server must exist before markers can reference it.
+    // Build it imperatively so no url(#…) fragment ever has to survive the
+    // template-literal transpilation of the shipped bundle.
+    let defs = layer.querySelector('defs');
+    if (!defs) {
+      defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      layer.insertBefore(defs, layer.firstChild);
+    }
+    if (!defs.querySelector('#' + MapPage.ROUTE_ARROW_MARKER_ID)) {
+      const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
+      marker.setAttribute('id', MapPage.ROUTE_ARROW_MARKER_ID);
+      marker.setAttribute('markerWidth', '8');
+      marker.setAttribute('markerHeight', '8');
+      marker.setAttribute('refX', '7');
+      marker.setAttribute('refY', '3.5');
+      marker.setAttribute('orient', 'auto');
+      marker.setAttribute('markerUnits', 'strokeWidth');
+      const head = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      head.setAttribute('d', 'M0,0 L0,7 L7,3.5 z');
+      head.setAttribute('class', 'message-route-arrowhead');
+      marker.appendChild(head);
+      defs.appendChild(marker);
+    }
+    const lines = root.querySelectorAll('line.message-route');
+    lines.forEach((line, index) => {
+      line.setAttribute('id', 'message-route-line-' + index);
+      line.setAttribute('marker-end', 'url(#' + MapPage.ROUTE_ARROW_MARKER_ID + ')');
+    });
+    root.querySelectorAll('circle.message-route-packet').forEach((packet, index) => {
+      const motion = packet.querySelector('animateMotion');
+      if (!motion || motion.getAttribute('href') || motion.querySelector('mpath')) return;
+      const mpath = document.createElementNS('http://www.w3.org/2000/svg', 'mpath');
+      mpath.setAttribute('href', '#message-route-line-' + index);
+      motion.appendChild(mpath);
+    });
+  }
+
+  private static readonly ROUTE_ARROW_MARKER_ID = 'message-route-arrow';
 
   private _messageBubblePoint(): { left: number; top: number } {
     const point = this._messageMap?.routes[0]?.points[0];
