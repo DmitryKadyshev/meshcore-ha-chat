@@ -18,6 +18,9 @@ interface RawRadioRow {
   id: number; time: string; type: string; route: string; path: string;
   message: string; coordinates: string; snr: string; rssi: string; noise: string; telemetry: string;
   hashes: string[]; payloadType?: number; payloadName?: string;
+  /** Original RX_LOG_DATA snapshot so historical rows can rebuild the exact route. */
+  eventData?: Record<string, unknown>;
+  rxData?: Record<string, unknown>;
 }
 interface GraphEdge {
   id: string;
@@ -809,6 +812,8 @@ export class MapPage extends LitElement {
       hashes,
       payloadType: Number.isFinite(Number(source.payload_type)) ? Number(source.payload_type) : undefined,
       payloadName: type,
+      eventData: { ...data },
+      rxData: payload ? { ...payload } : undefined,
     };
     this._rawRadioRows = [row, ...this._rawRadioRows].slice(0, 100);
   }
@@ -822,9 +827,15 @@ export class MapPage extends LitElement {
     // against the current contact store and use the exact same graph builder
     // as a live RX_LOG_DATA packet. This keeps historical rows and live events
     // visually identical.
-    this._graphEdges = this._buildGraphEdges(row.hashes, row.snr, row.rssi);
-    if (this._graphEdges.length) {
-      void this._refreshGraphView('RAW_EVENT row');
+    if (row.eventData && row.rxData) {
+      this._latestRadioEventData = { ...row.eventData };
+      this._latestRadioRx = { ...row.rxData };
+      this._recordFloodGraph(row.eventData, row.rxData);
+    } else {
+      this._graphEdges = this._buildGraphEdges(row.hashes, row.snr, row.rssi);
+      if (this._graphEdges.length) {
+        void this._refreshGraphView('RAW_EVENT row');
+      }
     }
   }
 
