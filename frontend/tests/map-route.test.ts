@@ -778,7 +778,7 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     expect(priv(el)._center).toEqual(initialCenter);
   });
 
-  it('clicking a RAW_EVENT row redraws that historical route', () => {
+  it('clicking a RAW_EVENT row redraws that historical route', async () => {
     fireRawEvent({
       event_type: 'RX_LOG_DATA',
       timestamp: 1759000000,
