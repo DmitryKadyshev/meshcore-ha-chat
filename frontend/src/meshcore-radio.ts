@@ -53,9 +53,32 @@ export function pathHashes(rx: Record<string, unknown>): string[] {
     const pathLen = nested
       .map(item => Number(item.path_len))
       .find(value => Number.isFinite(value) && value > 0);
-    if (pathLen && path.length % pathLen === 0) hashWidth = path.length / pathLen;
+    // MeshCore path hashes are 1–3 bytes (2/4/6 hex chars). Derive the width
+    // from path_len first, then fall back to the string geometry. The old
+    // `path.length / pathLen` formula inverted hop count and hash size and
+    // silently dropped every hop when they disagreed.
+    if (pathLen && pathLen >= 1 && pathLen <= 100 && path.length % pathLen === 0) {
+      const derived = path.length / pathLen;
+      if ([2, 4, 6].includes(derived)) hashWidth = derived;
+    }
+    if (!hashWidth) {
+      // path_len can be unreliable, so only accept a fallback width when the
+      // resulting hop count agrees with path_len (or path_len is absent).
+      const agrees = (hops: number) => hops >= 1 && hops <= 100 && (!pathLen || pathLen === hops);
+      if (path.length % 2 === 0 && agrees(path.length / 2)) hashWidth = 2;
+      if (!hashWidth && path.length % 4 === 0 && agrees(path.length / 4)) hashWidth = 4;
+      if (!hashWidth && path.length % 6 === 0 && agrees(path.length / 6)) hashWidth = 6;
+      if (!hashWidth && pathLen) {
+        if (path.length === pathLen * 2) hashWidth = 2;
+        else if (path.length === pathLen * 4) hashWidth = 4;
+        else if (path.length === pathLen * 6) hashWidth = 6;
+      }
+    }
   }
   if (!hashWidth || !Number.isInteger(hashWidth) || hashWidth < 2 || hashWidth > 6) {
+    // Without any reliable hint prefer the widest standard hash size that
+    // divides the path evenly (MeshCore uses 2-byte or 3-byte path IDs);
+    // splitting into 1-byte chunks would fabricate bogus hops.
     hashWidth = path.length % 6 === 0 ? 6 : path.length % 4 === 0 ? 4 : 2;
   }
 
@@ -67,11 +90,30 @@ export function pathHashes(rx: Record<string, unknown>): string[] {
 }
 
 export function hasCoordinates(contact: Contact): boolean {
-  return Number.isFinite(contact.adv_lat)
-    && Number.isFinite(contact.adv_lon)
-    && Math.abs(contact.adv_lat) <= 90
-    && Math.abs(contact.adv_lon) <= 180
-    && !(contact.adv_lat === 0 && contact.adv_lon === 0);
+  // MeshCore advert lat/lon arrive as raw protocol integers (degrees *
+  // 1e6). Values outside the raw-int range are already decimal degrees.
+  const isRawInt = (value: number) => Number.isInteger(value) && Math.abs(value) > 180;
+  const rawLat = Number(contact.adv_lat);
+  const rawLon = Number(contact.adv_lon);
+  const lat = isRawInt(rawLat) ? rawLat / 1e6 : rawLat;
+  const lon = isRawInt(rawLon) ? rawLon / 1e6 : rawLon;
+  return Number.isFinite(lat)
+    && Number.isFinite(lon)
+    && Math.abs(lat) <= 90
+    && Math.abs(lon) <= 180
+    && !(lat === 0 && lon === 0);
+}
+
+/** Mappable decimal coordinates of a contact, or null when unlocated. */
+export function nodeCoordinates(contact: Contact): { lat: number; lon: number } | null {
+  if (!hasCoordinates(contact)) return null;
+  const isRawInt = (value: number) => Number.isInteger(value) && Math.abs(value) > 180;
+  const rawLat = Number(contact.adv_lat);
+  const rawLon = Number(contact.adv_lon);
+  return {
+    lat: isRawInt(rawLat) ? rawLat / 1e6 : rawLat,
+    lon: isRawInt(rawLon) ? rawLon / 1e6 : rawLon,
+  };
 }
 
 export interface ResolvedRadioHop {
