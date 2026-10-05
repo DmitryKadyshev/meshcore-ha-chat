@@ -4,6 +4,11 @@ All notable changes to **MeshCore Chat for Home Assistant** are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- **MeshCore message route overlay was invisible despite valid route coordinates.** The route overlay now renders its `<line>`, `<circle>`, and `<text>` fragments with Lit's SVG template type so the elements are created in the SVG namespace. Geometry is also re-applied after render as a defensive measure, and a DOM regression test verifies SVG namespaces and finite, non-degenerate coordinates.
+
+
 ## [0.3.1] - 2026-06-24
 
 ### Fixed
