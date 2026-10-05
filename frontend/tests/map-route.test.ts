@@ -777,6 +777,40 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     expect(priv(el)._center).toEqual(initialCenter);
   });
 
+  it('clicking a RAW_EVENT row redraws that historical route', () => {
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        path_nodes: ['5053', '0a18', 'd69c'],
+        path_len: 3,
+        path_hash_size: 2,
+      }),
+    });
+    const row = priv(el)._rawRadioRows[0];
+    expect(row.hashes).toEqual(['5053', '0a18', 'd69c']);
+
+    const tableRow = el.shadowRoot?.querySelector('.radio-table tbody tr') as HTMLElement | null;
+    expect(tableRow).not.toBeNull();
+    tableRow?.click();
+
+    expect(priv(el)._selectedRadioRowId).toBe(row.id);
+    expect(priv(el)._graphEdges.length).toBeGreaterThan(0);
+    expect(priv(el)._graphEdges[0].from.key).toBe('5053');
+    expect(priv(el)._graphEdges[0].to.key).toBe('0a18');
+
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000001,
+      payload: rxLogPayload({
+        path_nodes: ['5053', '0a18', 'd69c'],
+        path_len: 3,
+        path_hash_size: 2,
+      }),
+    });
+    expect(priv(el)._selectedRadioRowId).toBeNull();
+  });
+
   it('reports coordinate availability for the RAW_EVENT route', () => {
     fireRawEvent({
       event_type: 'RX_LOG_DATA',
