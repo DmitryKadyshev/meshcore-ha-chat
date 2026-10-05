@@ -791,6 +791,7 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     const row = priv(el)._rawRadioRows[0];
     expect(row.hashes).toEqual(['5053', '0a18', 'd69c']);
 
+    await el.updateComplete;
     const tableRow = el.shadowRoot?.querySelector('.radio-table tbody tr') as HTMLElement | null;
     expect(tableRow).not.toBeNull();
     tableRow?.click();
