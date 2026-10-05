@@ -378,6 +378,7 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
         path_len: pathNodes.length,
         path_hash_size: 2,
         path: pathNodes.join(''),
+        path_nodes: pathNodes,
       }),
     });
 
