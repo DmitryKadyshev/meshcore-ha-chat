@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing, type PropertyValues } from 'lit';
+import { LitElement, html, svg, css, nothing, type PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Contact, HomeAssistant, PanelConfig } from '../types';
 import { hasCoordinates as hasRadioCoordinates, nodeCoordinates, pathHashes as parsePathHashes, payloadTypeName as radioPayloadTypeName } from '../meshcore-radio';
@@ -1503,9 +1503,9 @@ export class MapPage extends LitElement {
         const from = this._mapPoint(segment.from.lat, segment.from.lon);
         const to = this._mapPoint(segment.to.lat, segment.to.lon);
         return html`
-          <line data-route-line=${String(index)}
+          <line data-route-line="${String(index)}"
             class="message-route ${segment.secondary ? "secondary" : ""}"
-            x1=${from.left} y1=${from.top} x2=${to.left} y2=${to.top}></line>
+            x1="${from.left}" y1="${from.top}" x2="${to.left}" y2="${to.top}"></line>
           <circle class="message-route-packet ${segment.secondary ? "secondary" : ""}" r="5">
             <animateMotion dur=${segment.secondary ? "1.4s" : "1.1s"} repeatCount="indefinite" rotate="auto"></animateMotion>
           </circle>
@@ -1514,14 +1514,14 @@ export class MapPage extends LitElement {
 
       const nodesTemplate = [...nodeMap.values()].map(({ point, hop, sender }) => {
         const screen = this._mapPoint(point.lat, point.lon);
-        return html`
-          <circle class="message-node ${sender ? "sender" : ""}" cx=${screen.left} cy=${screen.top} r=${sender ? 10 : 8}></circle>
-          <circle class="message-node-core ${sender ? "sender" : ""}" cx=${screen.left} cy=${screen.top} r="4"></circle>
-          <text class="message-hop-label" x=${screen.left + 11} y=${screen.top - 9}>${sender ? "Sender" : `${hop}. ${point.name}`}</text>
+        return svg`
+          <circle class="message-node ${sender ? "sender" : ""}" data-route-node-key="${point.key}" cx="${screen.left}" cy="${screen.top}" r="${sender ? 10 : 8}"></circle>
+          <circle class="message-node-core ${sender ? "sender" : ""}" data-route-node-key="${point.key}" cx="${screen.left}" cy="${screen.top}" r="4"></circle>
+          <text class="message-hop-label" data-route-node-key="${point.key}" x="${screen.left + 11}" y="${screen.top - 9}">${sender ? "Sender" : `${hop}. ${point.name}`}</text>
         `;
       });
 
-    return html`<g class="message-route-overlay">${segmentsTemplate}${nodesTemplate}</g>`;
+    return svg`<g class="message-route-overlay">${segmentsTemplate}${nodesTemplate}</g>`;
   }
 
   /**
@@ -1559,11 +1559,62 @@ export class MapPage extends LitElement {
       marker.appendChild(head);
       defs.appendChild(marker);
     }
+    const routes = this._messageMap?.routes || [];
+    const segments = routes.flatMap(route => {
+      const result: Array<{ from: MessageMapPoint; to: MessageMapPoint }> = [];
+      for (let i = 0; i + 1 < route.points.length; i += 1) {
+        const from = route.points[i];
+        const to = route.points[i + 1];
+        if (Number.isFinite(from.lat) && Number.isFinite(from.lon)
+          && Number.isFinite(to.lat) && Number.isFinite(to.lon)) {
+          result.push({ from, to });
+        }
+      }
+      return result;
+    });
+    const nodeMap = new Map<string, MessageMapPoint>();
+    routes.forEach(route => route.points.forEach(point => nodeMap.set(point.key, point)));
+
     const lines = root.querySelectorAll('line.message-route');
     lines.forEach((line, index) => {
+      const segment = segments[index];
+      if (segment) {
+        const from = this._mapPoint(segment.from.lat, segment.from.lon);
+        const to = this._mapPoint(segment.to.lat, segment.to.lon);
+        for (const [name, value] of [
+          ['x1', from.left], ['y1', from.top], ['x2', to.left], ['y2', to.top],
+        ] as const) {
+          if (Number.isFinite(value)) line.setAttribute(name, String(value));
+        }
+      }
       line.setAttribute('id', 'message-route-line-' + index);
       line.setAttribute('marker-end', 'url(#' + MapPage.ROUTE_ARROW_MARKER_ID + ')');
     });
+
+    root.querySelectorAll<SVGCircleElement>('circle.message-node, circle.message-node-core').forEach(circle => {
+      const key = circle.getAttribute('data-route-node-key');
+      const point = key ? nodeMap.get(key) : undefined;
+      if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return;
+      const screen = this._mapPoint(point.lat, point.lon);
+      circle.setAttribute('cx', String(screen.left));
+      circle.setAttribute('cy', String(screen.top));
+      if (circle.classList.contains('message-node')) {
+        const sender = circle.classList.contains('sender');
+        circle.setAttribute('r', String(sender ? 10 : 8));
+      } else {
+        circle.setAttribute('r', '4');
+      }
+    });
+
+    root.querySelectorAll<SVGTextElement>('text.message-hop-label').forEach(label => {
+      const key = label.getAttribute('data-route-node-key');
+      const point = key ? nodeMap.get(key) : undefined;
+      if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return;
+      const screen = this._mapPoint(point.lat, point.lon);
+      label.setAttribute('x', String(screen.left + 11));
+      label.setAttribute('y', String(screen.top - 9));
+    });
+
     root.querySelectorAll('circle.message-route-packet').forEach((packet, index) => {
       const motion = packet.querySelector('animateMotion');
       if (!motion || motion.getAttribute('href') || motion.querySelector('mpath')) return;
