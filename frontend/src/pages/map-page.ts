@@ -854,15 +854,16 @@ export class MapPage extends LitElement {
 
     const sourceHashes = this._pathHashes(source);
     const hashes = sourceHashes.length ? sourceHashes : this._pathHashes(data);
-    this._graphEdges = this._buildGraphEdges(
+    const graphEdges = this._buildGraphEdges(
       hashes,
       String(data.timestamp ?? Date.now()),
-      source.snr ?? data.snr,
-      source.rssi ?? data.rssi,
+      typeof source.snr === 'string' || typeof source.snr === 'number' ? source.snr : (typeof data.snr === 'string' || typeof data.snr === 'number' ? data.snr : undefined),
+      typeof source.rssi === 'string' || typeof source.rssi === 'number' ? source.rssi : (typeof data.rssi === 'string' || typeof data.rssi === 'number' ? data.rssi : undefined),
     );
+    this._graphEdges = graphEdges;
     // BUG-12: fit as soon as the graph has points — waiting for a later
     // render/update cycle could leave the map on stale or default bounds.
-    if (edges.length) {
+    if (graphEdges.length) {
       this._fitGraph();
       this._startGraphAnimation();
     }
@@ -871,10 +872,9 @@ export class MapPage extends LitElement {
       payloadName,
       routeType,
       hashes,
-      resolved: points.map(point => point.name),
-      edgeCount: edges.length,
+      resolved: graphEdges.flatMap(edge => [edge.from.name, edge.to.name]),
+      edgeCount: graphEdges.length,
     });
-    if (edges.length) this._startGraphAnimation();
   }
 
   private _fitGraph() {
