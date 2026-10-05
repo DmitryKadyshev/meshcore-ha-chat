@@ -412,6 +412,8 @@ export class MapPage extends LitElement {
     .message-route { fill: none; stroke: rgba(3,169,244,.92); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 10 9; filter: drop-shadow(0 0 3px rgba(3,169,244,.55)); animation: message-route-flow 900ms linear infinite; }
     .message-route.secondary { stroke: rgba(255,152,0,.78); stroke-width: 3.5; filter: drop-shadow(0 0 3px rgba(255,152,0,.48)); animation-duration: 1050ms; }
     .message-route-glow { fill: none; stroke: rgba(255,255,255,.28); stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; filter: blur(3px); animation: message-route-pulse 1.5s ease-in-out infinite; }
+    .message-route-arrowhead { fill: rgba(3,169,244,.95); }
+    .message-route.secondary .message-route-arrowhead { fill: rgba(255,152,0,.9); }
     .message-route-packet { fill: #fff; stroke: rgba(3,169,244,.95); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(3,169,244,.95)); }
     .message-route-packet.secondary { fill: #fff; stroke: rgba(255,152,0,.95); filter: drop-shadow(0 0 5px rgba(255,152,0,.9)); }
     @keyframes message-route-flow { to { stroke-dashoffset: -38px; } }
@@ -1455,6 +1457,66 @@ export class MapPage extends LitElement {
     this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best + 1));
   }
 
+  /**
+   * Route nodes and connector arrows for the latest message/advert.
+   *
+   * Every hop of every route gets a visible node icon — including a
+   * single-point route (a direct message with no repeater path) — and the
+   * connectors are drawn hop-to-hop so each segment carries an arrowhead
+   * pointing along the direction the packet travelled.
+   */
+  private _routeOverlay() {
+    const routes = this._messageMap?.routes || [];
+    const nodeMap = new Map<string, { point: MessageMapPoint; hop: number; sender: boolean }>();
+    routes.forEach(route => {
+      route.points.forEach((point, pointIndex) => {
+        const existing = nodeMap.get(point.key);
+        const sender = pointIndex === 0;
+        if (!existing || pointIndex < existing.hop) {
+          nodeMap.set(point.key, { point, hop: pointIndex, sender });
+        }
+      });
+    });
+
+    const segments: { from: MessageMapPoint; to: MessageMapPoint; secondary: boolean }[] = [];
+    routes.forEach((route, index) => {
+      for (let i = 0; i + 1 < route.points.length; i += 1) {
+        const from = route.points[i];
+        const to = route.points[i + 1];
+        if (!Number.isFinite(from.lat) || !Number.isFinite(from.lon)
+          || !Number.isFinite(to.lat) || !Number.isFinite(to.lon)) continue;
+        segments.push({ from, to, secondary: index > 0 });
+      }
+    });
+
+    return html`
+      ${segments.map((segment, index) => {
+        const from = this._mapPoint(segment.from.lat, segment.from.lon);
+        const to = this._mapPoint(segment.to.lat, segment.to.lon);
+        const lineId = `message-route-line-${index}`;
+        return html`
+          <line id=${lineId}
+            class="message-route ${segment.secondary ? "secondary" : ""}"
+            x1=${from.left} y1=${from.top} x2=${to.left} y2=${to.top}
+            marker-end="url(#message-route-arrow)"></line>
+          <circle class="message-route-packet ${segment.secondary ? "secondary" : ""}" r="5">
+            <animateMotion dur=${segment.secondary ? "1.4s" : "1.1s"} repeatCount="indefinite" rotate="auto">
+              <mpath href=${`#${lineId}`}></mpath>
+            </animateMotion>
+          </circle>
+        `;
+      })}
+      ${[...nodeMap.values()].map(({ point, hop, sender }) => {
+        const screen = this._mapPoint(point.lat, point.lon);
+        return html`
+          <circle class="message-node ${sender ? "sender" : ""}" cx=${screen.left} cy=${screen.top} r=${sender ? 10 : 8}></circle>
+          <circle class="message-node-core ${sender ? "sender" : ""}" cx=${screen.left} cy=${screen.top} r="4"></circle>
+          <text class="message-hop-label" x=${screen.left + 11} y=${screen.top - 9}>${sender ? "Sender" : `${hop}. ${point.name}`}</text>
+        `;
+      })}
+    `;
+  }
+
   private _messageBubblePoint(): { left: number; top: number } {
     const point = this._messageMap?.routes[0]?.points[0];
     if (point) return this._mapPoint(point.lat, point.lon);
@@ -1886,47 +1948,12 @@ export class MapPage extends LitElement {
                     viewBox=${`0 0 ${Math.max(1, this._mapSize.width)} ${Math.max(1, this._mapSize.height)}`}
                     preserveAspectRatio="none"
                   >
-                    ${(() => {
-                      const routes = this._messageMap?.routes || [];
-                      const nodeMap = new Map<string, { point: MessageMapPoint; hop: number; sender: boolean }>();
-                      routes.forEach(route => {
-                        route.points.forEach((point, pointIndex) => {
-                          const existing = nodeMap.get(point.key);
-                          const sender = pointIndex === 0;
-                          if (!existing || pointIndex < existing.hop) {
-                            nodeMap.set(point.key, { point, hop: pointIndex, sender });
-                          }
-                        });
-                      });
-                      return html`
-                        ${routes.map((route, index) => {
-                          if (route.points.length < 2) return nothing;
-                          const points = route.points.map(point => {
-                            const screen = this._mapPoint(point.lat, point.lon);
-                            return `${screen.left},${screen.top}`;
-                          }).join(" ");
-                          const routeId = `message-route-${index}`;
-                          return html`
-                            <polyline class="message-route-glow" points=${points}></polyline>
-                            <polyline id=${routeId} class="message-route ${index ? "secondary" : ""}" points=${points}></polyline>
-                            <circle class="message-route-packet ${index ? "secondary" : ""}" r="5">
-                              <animateMotion dur=${index ? "1.4s" : "1.1s"} repeatCount="indefinite" rotate="auto">
-                                <mpath href=${`#${routeId}`}></mpath>
-                              </animateMotion>
-                            </circle>
-                          `;
-                        })}
-                        ${[...nodeMap.values()].map(({ point, hop, sender }) => {
-                          const screen = this._mapPoint(point.lat, point.lon);
-                          return html`
-                            <circle class="message-node ${sender ? "sender" : ""}" cx=${screen.left} cy=${screen.top} r=${sender ? 10 : 8}></circle>
-                            <circle class="message-node-core ${sender ? "sender" : ""}" cx=${screen.left} cy=${screen.top} r="4"></circle>
-                            <text class="message-hop-label" x=${screen.left + 11} y=${screen.top - 9}>${sender ? "Sender" : `${hop}. ${point.name}`}</text>
-                          `;
-                        })}
-                      `;
-                    })()}
-
+                    <defs>
+                      <marker id="message-route-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                        <path d="M0,0 L0,7 L7,3.5 z" class="message-route-arrowhead"></path>
+                      </marker>
+                    </defs>
+                    ${this._routeOverlay()}
                   </svg>
                   ${this._messageMap ? (() => {
                     const bubble = this._messageBubblePoint();

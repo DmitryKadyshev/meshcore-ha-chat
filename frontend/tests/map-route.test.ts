@@ -541,13 +541,70 @@ describe('MeshCore map text message route (meshcore_message)', () => {
 
     const polyline = el.shadowRoot!.querySelector('.message-route');
     expect(polyline).toBeTruthy();
-    const pointsAttr = polyline!.getAttribute('points') || '';
-    expect(pointsAttr.split(' ').length).toBeGreaterThanOrEqual(3);
-    // No degenerate NaN screen coordinates in the rendered polyline.
+    const pointsAttr = (polyline!.getAttribute('points') || [
+      polyline!.getAttribute('x1'), polyline!.getAttribute('y1'),
+      polyline!.getAttribute('x2'), polyline!.getAttribute('y2'),
+    ].join(','));
+    expect(pointsAttr).not.toMatch(/null/);
+    // No degenerate NaN screen coordinates in the rendered route connector.
     expect(pointsAttr).not.toMatch(/NaN/);
 
     const bubble = el.shadowRoot!.querySelector('.message-bubble-text');
     expect(bubble?.textContent).toContain('hello mesh');
+  });
+
+  it('renders a node icon for every hop and an arrow per segment', async () => {
+    fireMessageEvent({
+      entity_id: 'sensor.meshcore_5053aa_messages',
+      sender_name: 'Node 565D',
+      pubkey_prefix: '565daa55',
+      message: 'hello mesh',
+      timestamp: 1759000000,
+      rx_log_data: [{
+        path_len: 2,
+        path_hash_size: 2,
+        path: '5053db94',
+        path_nodes: ['5053', 'db94'],
+      }],
+    });
+    await el.updateComplete;
+
+    // Route: Node 565D (sender) → 5053 → db94 — three hops must be visible.
+    const nodes = el.shadowRoot!.querySelectorAll('.message-node');
+    expect(nodes.length).toBe(3);
+    // The first hop is highlighted as the sender.
+    expect(el.shadowRoot!.querySelector('.message-node.sender')).toBeTruthy();
+    // Two segments between three hops, each with an arrowhead pointing along
+    // the direction the packet travelled.
+    const connectors = el.shadowRoot!.querySelectorAll('.message-route');
+    expect(connectors.length).toBe(2);
+    for (const connector of connectors) {
+      expect(connector.getAttribute('marker-end')).toBe('url(#message-route-arrow)');
+    }
+    expect(el.shadowRoot!.querySelector('#message-route-arrow')).toBeTruthy();
+    // Hop labels name every intermediate node.
+    const labels = [...el.shadowRoot!.querySelectorAll('.message-hop-label')]
+      .map(label => label.textContent);
+    expect(labels).toContain('Sender');
+    expect(labels.some(text => text?.includes('Node 5053'))).toBe(true);
+  });
+
+  it('shows the sender node icon even for a single-point (direct) route', async () => {
+    fireMessageEvent({
+      entity_id: 'sensor.meshcore_5053aa_messages',
+      sender_name: 'Node 565D',
+      pubkey_prefix: '565daa55',
+      message: 'direct ping',
+      timestamp: 1759000000,
+      rx_log_data: [],
+    });
+    await el.updateComplete;
+
+    const nodes = el.shadowRoot!.querySelectorAll('.message-node');
+    expect(nodes.length).toBe(1);
+    expect(nodes[0].classList.contains('sender')).toBe(true);
+    // A one-point route has no segments, so no connectors are drawn.
+    expect(el.shadowRoot!.querySelectorAll('.message-route').length).toBe(0);
   });
 
   it('fits the message route above the minimum zoom (no full-world zoom-out)', () => {
