@@ -1536,6 +1536,37 @@ export class MapPage extends LitElement {
     if (!root) return;
     const layer = root.querySelector('svg.message-route-layer');
     if (!layer || !layer.querySelector('.message-route-overlay')) return;
+
+    // Defensive compatibility layer: older/stale bundles may have created
+    // route fragments from an HTML template instead of Lit's SVG template.
+    // Convert such descendants to the SVG namespace before touching geometry
+    // or SVG paint-server references.
+    const svgNamespace = 'http://www.w3.org/2000/svg';
+    const overlay = layer.querySelector('.message-route-overlay');
+    if (overlay) {
+      const convertToSvg = (source: Element): Element => {
+        if (source.namespaceURI === svgNamespace) {
+          Array.from(source.children).forEach(child => convertToSvg(child));
+          return source;
+        }
+        const target = document.createElementNS(svgNamespace, source.tagName.toLowerCase());
+        Array.from(source.attributes).forEach(attribute => {
+          target.setAttribute(attribute.name, attribute.value);
+        });
+        while (source.firstChild) {
+          const child = source.firstChild;
+          if (child.nodeType === Node.ELEMENT_NODE) {
+            target.appendChild(convertToSvg(child as Element));
+          } else {
+            target.appendChild(child);
+          }
+        }
+        source.replaceWith(target);
+        return target;
+      };
+      Array.from(overlay.children).forEach(child => convertToSvg(child));
+    }
+
     // The arrowhead paint server must exist before markers can reference it.
     // Build it imperatively so no url(#…) fragment ever has to survive the
     // template-literal transpilation of the shipped bundle.
