@@ -1025,6 +1025,9 @@ export class MapPage extends LitElement {
       // logged separately below.
       this._recordRawRadioEvent(data, rx);
       if (eventType === 'RX_LOG_DATA' && rx) {
+        // A newly received event always becomes the active route, replacing
+        // any route that was selected manually from the history table.
+        this._selectedRadioRowId = null;
         this._latestRadioEventData = { ...data };
         this._latestRadioRx = { ...rx, timestamp: data.timestamp };
         if (this._showMessage) this._recordFloodGraph(data, rx);
