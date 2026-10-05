@@ -25,7 +25,7 @@ interface GraphEdge {
   lastSeen: number; flowStartedAt: number; snr?: number; rssi?: number;
 }
 
-interface RawRadioRow { id: number; type: string; route: string; }
+interface RawRadioRow { id: number; type: string; route: string; path: string; telemetry: string; }
 
 interface PrivateMapPage {
   _showMessage: boolean;
@@ -176,6 +176,7 @@ function rxLogPayload(overrides: Record<string, unknown> = {}): Record<string, u
     path_hash_size: 2,
     path: '5053db94565d',
     path_nodes: ['5053', 'db94', '565d'],
+    payload_length: 27,
     snr: -12.5,
     rssi: -98,
     recv_time: 1759000000,
@@ -415,6 +416,48 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
       payload: rxLogPayload({ payload_typename: 'BATTERY' }),
     });
     expect(priv(el)._rawRadioRows).toHaveLength(0);
+  });
+
+  it('filters out every raw-table row with an empty payload_length', () => {
+    // Empty / missing payload_length → the row must not appear in the table.
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({ payload_length: '' }),
+    });
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000001,
+      payload: rxLogPayload({ payload_length: null }),
+    });
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000002,
+      payload: (() => {
+        const withoutLength = rxLogPayload();
+        delete withoutLength.payload_length;
+        return withoutLength;
+      })(),
+    });
+    expect(priv(el)._rawRadioRows).toHaveLength(0);
+
+    // Zero-length payload is equally uninformative — filtered too.
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000004,
+      payload: rxLogPayload({ payload_length: 0 }),
+    });
+    expect(priv(el)._rawRadioRows).toHaveLength(0);
+
+    // A real packet with payload_length keeps its row and shows the value.
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000005,
+      payload: rxLogPayload({ payload_length: 27 }),
+    });
+    const rows = priv(el)._rawRadioRows;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].telemetry).toContain('payload_length=27');
   });
 
   it('re-fits the graph when contacts arrive after the radio event', () => {
