@@ -1,7 +1,7 @@
 import { LitElement, html, css, nothing, type PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Contact, HomeAssistant, PanelConfig } from '../types';
-import { hasCoordinates as hasRadioCoordinates, pathHashes as parsePathHashes, payloadTypeName as radioPayloadTypeName } from '../meshcore-radio';
+import { hasCoordinates as hasRadioCoordinates, nodeCoordinates, pathHashes as parsePathHashes, payloadTypeName as radioPayloadTypeName } from '../meshcore-radio';
 
 interface MapNode {
   contact: Contact;
@@ -640,8 +640,9 @@ export class MapPage extends LitElement {
 
   private get _nodes(): MapNode[] {
     return this.contacts
-      .filter(hasCoordinates)
-      .map(contact => ({ contact, lat: contact.adv_lat, lon: contact.adv_lon }));
+      .map(contact => ({ contact, coords: nodeCoordinates(contact) }))
+      .filter((item): item is { contact: Contact; coords: { lat: number; lon: number } } => item.coords !== null)
+      .map(item => ({ contact: item.contact, lat: item.coords.lat, lon: item.coords.lon }));
   }
 
   private _name(contact: Contact): string {
@@ -789,6 +790,12 @@ export class MapPage extends LitElement {
     }
 
     this._graphEdges = edges;
+    // BUG-12: fit as soon as the graph has points — waiting for a later
+    // render/update cycle could leave the map on stale or default bounds.
+    if (edges.length) {
+      this._fitGraph();
+      this._startGraphAnimation();
+    }
     this._debugRadioEvent('RADIO route graph built', data, {
       payloadType,
       payloadName,
@@ -802,21 +809,30 @@ export class MapPage extends LitElement {
 
   private _fitGraph() {
     const unique = new Map(this._graphEdges.flatMap(edge => [edge.from, edge.to]).map(point => [point.key, point]));
-    const nodes = [...unique.values()];
-    if (nodes.length < 2) return;
+    // BUG-9: invalid coordinates must never reach fitBounds — they collapse
+    // the computed span and force a full-world zoom-out.
+    const nodes = [...unique.values()]
+      .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+    if (nodes.length === 0) return;
     const minLat = Math.min(...nodes.map(point => point.lat));
     const maxLat = Math.max(...nodes.map(point => point.lat));
     const minLon = Math.min(...nodes.map(point => point.lon));
     const maxLon = Math.max(...nodes.map(point => point.lon));
     this._center = [(minLat + maxLat) / 2, (minLon + maxLon) / 2];
+    if (nodes.length === 1 || (minLat === maxLat && minLon === maxLon)) {
+      this._zoom = 12;
+      return;
+    }
     const width = Math.max(this._mapSize.width - 140, 320);
     const height = Math.max(this._mapSize.height - 140, 240);
-    let zoom = MAX_ZOOM;
-    for (let z = MIN_ZOOM; z <= MAX_ZOOM; z += 1) {
+    // Highest zoom level that still keeps the whole route inside the
+    // viewport, plus one padding level — never below MIN_ZOOM.
+    let best = MIN_ZOOM;
+    for (let z = MAX_ZOOM; z >= MIN_ZOOM; z -= 1) {
       const [x1, y1] = project(minLat, minLon, z); const [x2, y2] = project(maxLat, maxLon, z);
-      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { zoom = z; break; }
+      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { best = z; break; }
     }
-    this._zoom = Math.max(MIN_ZOOM, zoom - 1);
+    this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best + 1));
   }
 
   private _startGraphAnimation() {
@@ -964,7 +980,10 @@ export class MapPage extends LitElement {
           timestamp: data.timestamp,
         });
         this._messageMap = advertMap;
-        this._fitMessage();
+        // An advert without resolvable coordinates must not keep showing a
+        // stale message route from a previous packet.
+        if (!advertMap.routes.length) this._messageMap = null;
+        else this._fitMessage();
 
         this._debugRadioEvent('ADVERT map built', data, {
           payloadType,
@@ -982,6 +1001,9 @@ export class MapPage extends LitElement {
       }
 
       if (!isTextPacket) {
+        // A non-text technical packet is rendered as the route graph only.
+        // Drop any stale message bubble/route from a previous packet so the
+        // two visualizations never overlap (BUG-13).
         this._messageMap = null;
         if (this._graphEdges.length) this._fitGraph();
         return;
@@ -994,8 +1016,19 @@ export class MapPage extends LitElement {
         ...rx,
         timestamp: data.timestamp,
       });
-      this._messageMap = packetMap;
-      this._fitMessage();
+      // Text packets (TEXT_MSG / GRP_TXT) always build a message map so the
+      // text stays accessible even when no hop resolves to coordinates —
+      // _fitMessage() keeps the viewport untouched in that case and the
+      // bubble is anchored to the current view instead of zooming out.
+      // For non-text packets an unresolvable route must not keep a stale
+      // bubble from a previous packet.
+      if (packetMap.routes.length || isTextPacket) {
+        this._messageMap = packetMap;
+        this._fitMessage();
+      } else {
+        this._messageMap = null;
+        if (this._graphEdges.length) this._fitGraph();
+      }
 
       this._debugRadioEvent('PACKET map built', data, {
         payloadType,
@@ -1085,7 +1118,7 @@ export class MapPage extends LitElement {
     return parsePathHashes(rx);
   }
 
-  private _resolvePathPoints(hashes: string[]): MessageMapPoint[] {
+  private _resolvePathPoints(hashes: string[], extraAnchors?: MessageMapPoint[]): MessageMapPoint[] {
     if (!hashes.length) return [];
 
     // Keep the exact radio path order. A hash may resolve to a contact even
@@ -1093,23 +1126,46 @@ export class MapPage extends LitElement {
     // remain visible in the route graph.
     const points = hashes.map((hash, index) => {
       const contact = this._findContactByHash(hash);
-      const located = Boolean(contact && hasCoordinates(contact));
+      const coords = contact ? nodeCoordinates(contact) : null;
       return {
         key: contact?.public_key || `path:${hash}:${index}`,
         name: contact ? this._name(contact) : hash,
-        lat: located ? Number(contact!.adv_lat) : Number.NaN,
-        lon: located ? Number(contact!.adv_lon) : Number.NaN,
+        lat: coords ? coords.lat : Number.NaN,
+        lon: coords ? coords.lon : Number.NaN,
       };
     });
+
+    // A caller-provided located anchor (e.g. the message sender prepended in
+    // front of the radio path) counts as a coordinate anchor too: with it,
+    // unlocated hops can be interpolated instead of dropped for lack of two
+    // located nodes inside the path itself.
+    const extraAnchor = extraAnchors && extraAnchors.length ? extraAnchors[0] : undefined;
+    const extraIsAnchor = !!extraAnchor
+      && Number.isFinite(extraAnchor.lat) && Number.isFinite(extraAnchor.lon);
 
     const anchors = points
       .map((point, index) => ({ point, index }))
       .filter(item => Number.isFinite(item.point.lat) && Number.isFinite(item.point.lon));
 
-    // With two or more located nodes, put every unresolved hop on the
-    // geographic segment between its nearest located neighbours. This keeps
-    // 5053 → db94 → 565d on the visible edge even when db94 has no GPS data.
-    if (anchors.length >= 2) {
+    // With two or more located nodes (the sender anchor included), put every
+    // unresolved hop on the geographic segment between its nearest located
+    // neighbours. This keeps 5053 → db94 → 565d on the visible edge even when
+    // db94 has no GPS data.
+    if (anchors.length + (extraIsAnchor ? 1 : 0) >= 2) {
+      if (extraIsAnchor && extraAnchor && anchors.length === 1) {
+        // Single located hop plus the external anchor: treat the anchor as the
+        // leading reference point and extrapolate every hop away from it.
+        const only = anchors[0];
+        const stepLat = only.point.lat - extraAnchor.lat;
+        const stepLon = only.point.lon - extraAnchor.lon;
+        for (let j = 0; j < points.length; j += 1) {
+          if (j === only.index) continue;
+          const distance = Math.abs(j - only.index);
+          const sign = j > only.index ? 1 : -1;
+          points[j].lat = only.point.lat + stepLat * distance * sign;
+          points[j].lon = only.point.lon + stepLon * distance * sign;
+        }
+      } else {
       for (let i = 0; i < anchors.length - 1; i += 1) {
         const left = anchors[i];
         const right = anchors[i + 1];
@@ -1124,26 +1180,36 @@ export class MapPage extends LitElement {
       }
 
       // If unresolved nodes occur before the first or after the last located
-      // node, extrapolate using the nearest anchor pair. This preserves the
-      // route order without inventing a global/default coordinate.
+      // node, extrapolate using the nearest anchor pair — or, when the path
+      // starts with exactly one located hop, using the external anchor as the
+      // direction reference (sender → hop).
       const first = anchors[0];
-      const second = anchors[1];
+      const second = anchors.length >= 2 ? anchors[1] : undefined;
       const last = anchors[anchors.length - 1];
-      const beforeStepLat = second.point.lat - first.point.lat;
-      const beforeStepLon = second.point.lon - first.point.lon;
+      const beforeStepLat = second
+        ? second.point.lat - first.point.lat
+        : extraIsAnchor && extraAnchor ? first.point.lat - extraAnchor.lat : 0;
+      const beforeStepLon = second
+        ? second.point.lon - first.point.lon
+        : extraIsAnchor && extraAnchor ? first.point.lon - extraAnchor.lon : 0;
       for (let j = first.index - 1; j >= 0; j -= 1) {
         const distance = first.index - j;
         points[j].lat = first.point.lat - beforeStepLat * distance;
         points[j].lon = first.point.lon - beforeStepLon * distance;
       }
 
-      const previous = anchors[anchors.length - 2];
-      const afterStepLat = last.point.lat - previous.point.lat;
-      const afterStepLon = last.point.lon - previous.point.lon;
+      const previous = anchors.length >= 2 ? anchors[anchors.length - 2] : undefined;
+      const afterStepLat = previous
+        ? last.point.lat - previous.point.lat
+        : extraIsAnchor && extraAnchor && anchors.length === 1 ? last.point.lat - extraAnchor.lat : 0;
+      const afterStepLon = previous
+        ? last.point.lon - previous.point.lon
+        : extraIsAnchor && extraAnchor && anchors.length === 1 ? last.point.lon - extraAnchor.lon : 0;
       for (let j = last.index + 1; j < points.length; j += 1) {
         const distance = j - last.index;
         points[j].lat = last.point.lat + afterStepLat * distance;
         points[j].lon = last.point.lon + afterStepLon * distance;
+      }
       }
     }
 
@@ -1208,31 +1274,38 @@ export class MapPage extends LitElement {
     const sender = name;
     const target = `Advert · ${typeName}`;
     const advKey = String(data.adv_key || '').toLowerCase();
-    const advLat = Number(data.adv_lat);
-    const advLon = Number(data.adv_lon);
-    const senderPoint: MessageMapPoint | undefined =
-      Number.isFinite(advLat) && Number.isFinite(advLon)
-        && Math.abs(advLat) <= 90 && Math.abs(advLon) <= 180
-        && !(advLat === 0 && advLon === 0)
-        ? {
-            key: advKey || `advert:${name}`,
-            name,
-            lat: advLat,
-            lon: advLon,
-          }
-        : undefined;
+    const advCoords = nodeCoordinates({
+      ...(data as unknown as Contact),
+      public_key: advKey,
+      pubkey_prefix: advKey.substring(0, 6),
+      added_to_node: false,
+      adv_name: name,
+      type: advType,
+      flags: 0,
+      adv_lat: Number(data.adv_lat),
+      adv_lon: Number(data.adv_lon),
+      lastmod: 0,
+      last_advert: 0,
+      out_path: '',
+      out_path_len: 0,
+      out_path_hash_mode: 2,
+    });
+    const senderPoint: MessageMapPoint | undefined = advCoords
+      ? { key: advKey || `advert:${name}`, name, lat: advCoords.lat, lon: advCoords.lon }
+      : undefined;
 
     const pathHashes = this._pathHashes(data);
     const points: MessageMapPoint[] = [];
     if (senderPoint) points.push(senderPoint);
     for (const hash of pathHashes) {
       const contact = this._findContactByHash(hash);
-      if (!contact || !hasCoordinates(contact)) continue;
+      const coords = contact ? nodeCoordinates(contact) : null;
+      if (!contact || !coords) continue;
       const point: MessageMapPoint = {
         key: contact.public_key,
         name: this._name(contact),
-        lat: contact.adv_lat,
-        lon: contact.adv_lon,
+        lat: coords.lat,
+        lon: coords.lon,
       };
       if (!points.some(existing => existing.key === point.key)) points.push(point);
     }
@@ -1269,17 +1342,22 @@ export class MapPage extends LitElement {
     const sender = String(data.sender_name || 'Unknown node');
     const channel = String(data.channel || '');
     const target = channel ? `#${channel}` : sender;
-    const senderPrefix = String(data.pubkey_prefix || '').toLowerCase();
+    // MeshCore pubkey prefixes are 8 hex chars; path IDs are the first 2–3
+    // bytes (4–6 chars), so match on that shorter prefix.
+    const senderPrefix = String(data.pubkey_prefix || '').toLowerCase().replace(/[^0-9a-f]/g, '').slice(0, 6);
     const senderContact = (senderPrefix ? this._findContactByHash(senderPrefix) : undefined)
       || this.contacts.find(contact =>
         hasCoordinates(contact)
         && this._name(contact).trim().toLowerCase() === sender.trim().toLowerCase(),
       );
-    const senderPoint: MessageMapPoint | undefined = senderContact && hasCoordinates(senderContact) ? {
+    // Use normalized decimal coordinates — raw MeshCore advert integers must
+    // never reach the map projection unconverted.
+    const senderCoords = senderContact ? nodeCoordinates(senderContact) : null;
+    const senderPoint: MessageMapPoint | undefined = senderContact && senderCoords ? {
       key: senderContact.public_key,
       name: this._name(senderContact),
-      lat: senderContact.adv_lat,
-      lon: senderContact.adv_lon,
+      lat: senderCoords.lat,
+      lon: senderCoords.lon,
     } : undefined;
 
     const rxLogs = Array.isArray(data.rx_log_data)
@@ -1290,8 +1368,20 @@ export class MapPage extends LitElement {
 
     for (const rx of sourceLogs) {
       const hashPath = this._pathHashes(rx);
-      const pathPoints = this._resolvePathPoints(hashPath);
-      const points = senderPoint ? [senderPoint, ...pathPoints] : pathPoints;
+      // Pass the sender as an external coordinate anchor: when only one hop
+      // of the radio path is located (e.g. 5053 → db94 with no GPS on db94),
+      // the remaining hops are extrapolated from sender + anchor instead of
+      // being dropped for lack of two anchors inside the path.
+      const pathPoints = this._resolvePathPoints(hashPath, senderPoint ? [senderPoint] : undefined);
+      // The radio path may start at the transmitting node itself; when the
+      // sender is already the first hop of the resolved path, don't duplicate
+      // it. Otherwise prepend the sender as an anchor so unlocated tail hops
+      // (e.g. a repeater without GPS) still get interpolated instead of being
+      // dropped for lack of two coordinate anchors.
+      const dedupedPath = senderPoint && pathPoints.length && pathPoints[0].key === senderPoint.key
+        ? pathPoints.slice(1)
+        : pathPoints;
+      const points = senderPoint ? [senderPoint, ...dedupedPath] : pathPoints;
       const uniquePoints: MessageMapPoint[] = [];
       for (const point of points) {
         if (!uniquePoints.some(existing => existing.key === point.key)) uniquePoints.push(point);
@@ -1319,7 +1409,10 @@ export class MapPage extends LitElement {
 
   private _fitMessage() {
     if (!this._showMessage || !this._messageMap) return;
-    const points = this._messageMap.routes.flatMap(route => route.points);
+    // BUG-9: only finite coordinates may enter the fit bounds.
+    const points = this._messageMap.routes
+      .flatMap(route => route.points)
+      .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lon));
     // If the route cannot be resolved to known node coordinates, keep the
     // map exactly where the user currently has it. The message bubble is
     // rendered independently of map coordinates in that case.
@@ -1329,15 +1422,17 @@ export class MapPage extends LitElement {
     const minLon = Math.min(...points.map(point => point.lon));
     const maxLon = Math.max(...points.map(point => point.lon));
     this._center = [(minLat + maxLat) / 2, (minLon + maxLon) / 2];
-    if (points.length === 1) { this._zoom = 12; return; }
+    if (points.length === 1 || (minLat === maxLat && minLon === maxLon)) { this._zoom = 12; return; }
     const width = Math.max(this._mapSize.width - 120, 320);
     const height = Math.max(this._mapSize.height - 120, 240);
-    let zoom = MAX_ZOOM;
-    for (let z = MIN_ZOOM; z <= MAX_ZOOM; z++) {
+    // Highest zoom level that still keeps the whole route inside the
+    // viewport, plus one padding level — never below MIN_ZOOM.
+    let best = MIN_ZOOM;
+    for (let z = MAX_ZOOM; z >= MIN_ZOOM; z--) {
       const [x1, y1] = project(minLat, minLon, z); const [x2, y2] = project(maxLat, maxLon, z);
-      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { zoom = z; break; }
+      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { best = z; break; }
     }
-    this._zoom = Math.max(MIN_ZOOM, zoom - 1);
+    this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best + 1));
   }
 
   private _messageBubblePoint(): { left: number; top: number } {
@@ -1387,9 +1482,11 @@ export class MapPage extends LitElement {
   }
 
   private _focus(contact: Contact) {
-    if (!hasCoordinates(contact)) return;
+    const coords = nodeCoordinates(contact);
+    if (!coords) return;
     this._selectedKey = contact.public_key;
-    this._center = [contact.adv_lat, contact.adv_lon];
+    // Use normalized decimal degrees (raw MeshCore advert ints are degrees * 1e6).
+    this._center = [coords.lat, coords.lon];
     this._zoom = Math.max(this._zoom, 12);
   }
 
