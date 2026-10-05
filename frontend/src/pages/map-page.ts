@@ -1118,7 +1118,7 @@ export class MapPage extends LitElement {
     return parsePathHashes(rx);
   }
 
-  private _resolvePathPoints(hashes: string[]): MessageMapPoint[] {
+  private _resolvePathPoints(hashes: string[], extraAnchors?: MessageMapPoint[]): MessageMapPoint[] {
     if (!hashes.length) return [];
 
     // Keep the exact radio path order. A hash may resolve to a contact even
@@ -1135,14 +1135,37 @@ export class MapPage extends LitElement {
       };
     });
 
+    // A caller-provided located anchor (e.g. the message sender prepended in
+    // front of the radio path) counts as a coordinate anchor too: with it,
+    // unlocated hops can be interpolated instead of dropped for lack of two
+    // located nodes inside the path itself.
+    const extraAnchor = extraAnchors && extraAnchors.length ? extraAnchors[0] : undefined;
+    const extraIsAnchor = !!extraAnchor
+      && Number.isFinite(extraAnchor.lat) && Number.isFinite(extraAnchor.lon);
+
     const anchors = points
       .map((point, index) => ({ point, index }))
       .filter(item => Number.isFinite(item.point.lat) && Number.isFinite(item.point.lon));
 
-    // With two or more located nodes, put every unresolved hop on the
-    // geographic segment between its nearest located neighbours. This keeps
-    // 5053 → db94 → 565d on the visible edge even when db94 has no GPS data.
-    if (anchors.length >= 2) {
+    // With two or more located nodes (the sender anchor included), put every
+    // unresolved hop on the geographic segment between its nearest located
+    // neighbours. This keeps 5053 → db94 → 565d on the visible edge even when
+    // db94 has no GPS data.
+    if (anchors.length + (extraIsAnchor ? 1 : 0) >= 2) {
+      if (extraIsAnchor && extraAnchor && anchors.length === 1) {
+        // Single located hop plus the external anchor: treat the anchor as the
+        // leading reference point and extrapolate every hop away from it.
+        const only = anchors[0];
+        const stepLat = only.point.lat - extraAnchor.lat;
+        const stepLon = only.point.lon - extraAnchor.lon;
+        for (let j = 0; j < points.length; j += 1) {
+          if (j === only.index) continue;
+          const distance = Math.abs(j - only.index);
+          const sign = j > only.index ? 1 : -1;
+          points[j].lat = only.point.lat + stepLat * distance * sign;
+          points[j].lon = only.point.lon + stepLon * distance * sign;
+        }
+      } else {
       for (let i = 0; i < anchors.length - 1; i += 1) {
         const left = anchors[i];
         const right = anchors[i + 1];
@@ -1157,26 +1180,36 @@ export class MapPage extends LitElement {
       }
 
       // If unresolved nodes occur before the first or after the last located
-      // node, extrapolate using the nearest anchor pair. This preserves the
-      // route order without inventing a global/default coordinate.
+      // node, extrapolate using the nearest anchor pair — or, when the path
+      // starts with exactly one located hop, using the external anchor as the
+      // direction reference (sender → hop).
       const first = anchors[0];
-      const second = anchors[1];
+      const second = anchors.length >= 2 ? anchors[1] : undefined;
       const last = anchors[anchors.length - 1];
-      const beforeStepLat = second.point.lat - first.point.lat;
-      const beforeStepLon = second.point.lon - first.point.lon;
+      const beforeStepLat = second
+        ? second.point.lat - first.point.lat
+        : extraIsAnchor && extraAnchor ? first.point.lat - extraAnchor.lat : 0;
+      const beforeStepLon = second
+        ? second.point.lon - first.point.lon
+        : extraIsAnchor && extraAnchor ? first.point.lon - extraAnchor.lon : 0;
       for (let j = first.index - 1; j >= 0; j -= 1) {
         const distance = first.index - j;
         points[j].lat = first.point.lat - beforeStepLat * distance;
         points[j].lon = first.point.lon - beforeStepLon * distance;
       }
 
-      const previous = anchors[anchors.length - 2];
-      const afterStepLat = last.point.lat - previous.point.lat;
-      const afterStepLon = last.point.lon - previous.point.lon;
+      const previous = anchors.length >= 2 ? anchors[anchors.length - 2] : undefined;
+      const afterStepLat = previous
+        ? last.point.lat - previous.point.lat
+        : extraIsAnchor && extraAnchor && anchors.length === 1 ? last.point.lat - extraAnchor.lat : 0;
+      const afterStepLon = previous
+        ? last.point.lon - previous.point.lon
+        : extraIsAnchor && extraAnchor && anchors.length === 1 ? last.point.lon - extraAnchor.lon : 0;
       for (let j = last.index + 1; j < points.length; j += 1) {
         const distance = j - last.index;
         points[j].lat = last.point.lat + afterStepLat * distance;
         points[j].lon = last.point.lon + afterStepLon * distance;
+      }
       }
     }
 
@@ -1335,15 +1368,20 @@ export class MapPage extends LitElement {
 
     for (const rx of sourceLogs) {
       const hashPath = this._pathHashes(rx);
-      const pathPoints = this._resolvePathPoints(hashPath);
-      let points = senderPoint ? [senderPoint, ...pathPoints] : pathPoints;
-      // The radio path starts at the transmitting node itself; when the
+      // Pass the sender as an external coordinate anchor: when only one hop
+      // of the radio path is located (e.g. 5053 → db94 with no GPS on db94),
+      // the remaining hops are extrapolated from sender + anchor instead of
+      // being dropped for lack of two anchors inside the path.
+      const pathPoints = this._resolvePathPoints(hashPath, senderPoint ? [senderPoint] : undefined);
+      // The radio path may start at the transmitting node itself; when the
       // sender is already the first hop of the resolved path, don't duplicate
-      // it (and don't prepend a located sender in front of an unlocated tail
-      // hop — that would break interpolation anchoring and collapse the fit).
-      if (senderPoint && pathPoints.length && pathPoints[0].key === senderPoint.key) {
-        points = pathPoints;
-      }
+      // it. Otherwise prepend the sender as an anchor so unlocated tail hops
+      // (e.g. a repeater without GPS) still get interpolated instead of being
+      // dropped for lack of two coordinate anchors.
+      const dedupedPath = senderPoint && pathPoints.length && pathPoints[0].key === senderPoint.key
+        ? pathPoints.slice(1)
+        : pathPoints;
+      const points = senderPoint ? [senderPoint, ...dedupedPath] : pathPoints;
       const uniquePoints: MessageMapPoint[] = [];
       for (const point of points) {
         if (!uniquePoints.some(existing => existing.key === point.key)) uniquePoints.push(point);

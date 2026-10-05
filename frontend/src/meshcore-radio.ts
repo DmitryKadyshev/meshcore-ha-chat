@@ -64,14 +64,16 @@ export function pathHashes(rx: Record<string, unknown>): string[] {
     if (!hashWidth) {
       // path_len can be unreliable, so only accept a fallback width when the
       // resulting hop count agrees with path_len (or path_len is absent).
+      // Try MeshCore's standard widths from widest to narrowest (3-byte IDs
+      // first), so a bare hex path never collapses into bogus 1-byte hops.
       const agrees = (hops: number) => hops >= 1 && hops <= 100 && (!pathLen || pathLen === hops);
-      if (path.length % 2 === 0 && agrees(path.length / 2)) hashWidth = 2;
+      if (path.length % 6 === 0 && agrees(path.length / 6)) hashWidth = 6;
       if (!hashWidth && path.length % 4 === 0 && agrees(path.length / 4)) hashWidth = 4;
-      if (!hashWidth && path.length % 6 === 0 && agrees(path.length / 6)) hashWidth = 6;
+      if (!hashWidth && path.length % 2 === 0 && agrees(path.length / 2)) hashWidth = 2;
       if (!hashWidth && pathLen) {
-        if (path.length === pathLen * 2) hashWidth = 2;
+        if (path.length === pathLen * 6) hashWidth = 6;
         else if (path.length === pathLen * 4) hashWidth = 4;
-        else if (path.length === pathLen * 6) hashWidth = 6;
+        else if (path.length === pathLen * 2) hashWidth = 2;
       }
     }
   }

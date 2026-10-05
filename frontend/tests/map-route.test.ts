@@ -34,6 +34,10 @@ interface PrivateMapPage {
   _center: [number, number];
   _zoom: number;
   _mapSize: { width: number; height: number };
+  // The component's ResizeObserver fires asynchronously in the browser and
+  // never delivers an entry under happy-dom, so it would reset the viewport
+  // to 0×0 mid-test. Stub it out to keep a deterministic map size.
+  _resizeObserver?: ResizeObserver;
   _latestRadioRx: Record<string, unknown> | null;
   _rawRadioRows: RawRadioRow[];
   _pathHashes(rx: Record<string, unknown>): string[];
@@ -158,6 +162,7 @@ async function mountMapPage(): Promise<MapPage> {
   // The map viewport is zero-sized in happy-dom; give it a realistic size
   // so fit logic has meaningful bounds.
   priv(el)._mapSize = { width: 800, height: 600 };
+  priv(el)._resizeObserver = undefined;
   return el;
 }
 
@@ -339,9 +344,10 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     // BUG-1 regression: previously empty bounds collapsed the map to MIN_ZOOM.
     expect(p._zoom).toBeGreaterThan(MIN_ZOOM);
     expect(p._zoom).toBeLessThan(MAX_ZOOM);
-    // A 2°×2° route on an 800×600 viewport fits at zoom 8; the fit adds one
-    // padding level, so the map lands at zoom 9 — never at the world view.
-    expect(p._zoom).toBe(9);
+    // A 2°×2° route on an 800×600 viewport fits at zoom 7 (world span at z7
+    // is 32768px, so 2° ≈ 364px ≤ the padded bounds); the fit adds one
+    // padding level, so the map lands at zoom 8 — never at the world view.
+    expect(p._zoom).toBe(8);
     // Centered on the route midpoint, not the world/default center.
     expect(p._center[0]).toBeCloseTo(51.0, 5);
     expect(p._center[1]).toBeCloseTo(11.0, 5);
