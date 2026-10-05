@@ -436,6 +436,43 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     expect(priv(el)._graphEdges).toHaveLength(2);
   });
 
+  it('keeps the technical graph visible when TEXT_MSG is followed by meshcore_message', async () => {
+    // Normal TEXT_MSG delivery emits meshcore_message after RX_LOG_DATA.
+    // Regression: its _fitMessage() used to move the viewport after the graph
+    // refresh, making the graph appear to disappear. GRP_TXT often did not
+    // emit that follow-up event, which is why it worked.
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({ payload_type: 2, payload_typename: 'TEXT_MSG' }),
+    });
+    expect(priv(el)._graphEdges).toHaveLength(2);
+
+    fireMessageEvent({
+      entity_id: 'sensor.meshcore_5053aa_messages',
+      sender_name: 'Node 565D',
+      pubkey_prefix: '565daa55',
+      message: 'hello mesh',
+      channel: 'general',
+      timestamp: 1759000000,
+      rx_log_data: [{
+        path_len: 3,
+        path_hash_size: 2,
+        path: '5053db94565d',
+        path_nodes: ['5053', 'db94', '565d'],
+        snr: -12.5,
+        rssi: -98,
+      }],
+    });
+
+    await el.updateComplete;
+    expect(priv(el)._graphEdges).toHaveLength(2);
+    expect(priv(el)._center[0]).toBeCloseTo(51.0, 5);
+    expect(priv(el)._center[1]).toBeCloseTo(11.0, 5);
+    expect(el.shadowRoot!.querySelector('.graph-layer')).toBeTruthy();
+    expect(el.shadowRoot!.querySelectorAll('.graph-edge')).toHaveLength(2);
+  });
+
   it('filters noisy events (NO_MORE_MSGS, BATTERY) from the raw table', () => {
     fireRawEvent({
       event_type: 'NO_MORE_MSGS',
