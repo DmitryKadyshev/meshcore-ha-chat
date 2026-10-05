@@ -835,6 +835,23 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     expect(priv(el)._rawRadioRows[0].coordinates).toBe('✗ 1/3');
   });
 
+  it('builds the route graph for non-text and GRP_TXT packets', () => {
+    for (const payloadType of [0, 2, 5, 8]) {
+      fireRawEvent({
+        event_type: 'RX_LOG_DATA',
+        timestamp: 1759000000 + payloadType,
+        payload: rxLogPayload({
+          payload_type: payloadType,
+          payload_typename: payloadType === 5 ? 'GRP_TXT' : undefined,
+          path_nodes: ['5053', '0a18', 'd69c'],
+          path_len: 3,
+          path_hash_size: 2,
+        }),
+      });
+      expect(priv(el)._graphEdges.length).toBe(2);
+    }
+  });
+
   it('technical packet map exposes path details for the RAW_EVENT info line', () => {
     const packetMap = priv(el)._buildPacketMap(rxLogPayload());
     expect(packetMap.text).toContain('path 5053 → db94 → 565d');
