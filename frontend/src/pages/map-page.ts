@@ -73,7 +73,6 @@ export class MapPage extends LitElement {
   @state() private _deviceSort: 'name' | 'activity' = 'name';
   @state() private _activityNow = Date.now();
   @state() private _showMessage = false;
-  @state() private _graphRouteActive = false;
   @state() private _messageMap: MessageMapState | null = null;
   @state() private _rawRadioRows: RawRadioRow[] = [];
   @state() private _selectedRadioRowId: number | null = null;
@@ -611,7 +610,7 @@ export class MapPage extends LitElement {
       if (!entry) return;
       const { width, height } = entry.contentRect;
       this._mapSize = { width, height };
-      if (this._graphRouteActive && this._graphEdges.length) {
+      if (this._graphEdges.length) {
         this._fitGraph();
       } else if (this._showMessage && this._messageMap) {
         this._fitMessage();
@@ -821,7 +820,6 @@ export class MapPage extends LitElement {
 
   private _showRadioRow(row: RawRadioRow) {
     this._selectedRadioRowId = row.id;
-    this._graphRouteActive = true;
     // A historical RAW_EVENT selection is a technical route selection, not a
     // message-bubble selection. Force the graph mode and clear any stale
     // message overlay before rebuilding the selected packet.
@@ -919,19 +917,17 @@ export class MapPage extends LitElement {
       const advName = String(source.adv_name || data.adv_name || 'Advertised node');
       const advLat = Number(source.adv_lat ?? data.adv_lat);
       const advLon = Number(source.adv_lon ?? data.adv_lon);
-      if (Number.isFinite(advLat) && Number.isFinite(advLon)
-        && Math.abs(advLat) <= 90 && Math.abs(advLon) <= 180
-        && !(advLat === 0 && advLon === 0)) {
-        const normalizedLat = Number.isInteger(advLat) && Math.abs(advLat) > 180 ? advLat / 1e6 : advLat;
-        const normalizedLon = Number.isInteger(advLon) && Math.abs(advLon) > 180 ? advLon / 1e6 : advLon;
-        if (Math.abs(normalizedLat) <= 90 && Math.abs(normalizedLon) <= 180) {
-          advertPoint = {
-            key: advKey || `advert:${advName}`,
-            name: advName,
-            lat: normalizedLat,
-            lon: normalizedLon,
-          };
-        }
+      const normalizedLat = Number.isInteger(advLat) && Math.abs(advLat) > 180 ? advLat / 1e6 : advLat;
+      const normalizedLon = Number.isInteger(advLon) && Math.abs(advLon) > 180 ? advLon / 1e6 : advLon;
+      if (Number.isFinite(normalizedLat) && Number.isFinite(normalizedLon)
+        && Math.abs(normalizedLat) <= 90 && Math.abs(normalizedLon) <= 180
+        && !(normalizedLat === 0 && normalizedLon === 0)) {
+        advertPoint = {
+          key: advKey || `advert:${advName}`,
+          name: advName,
+          lat: normalizedLat,
+          lon: normalizedLon,
+        };
       }
     }
 
@@ -942,7 +938,6 @@ export class MapPage extends LitElement {
       advertPoint,
     );
     this._graphEdges = graphEdges;
-    this._graphRouteActive = graphEdges.length > 0;
     if (graphEdges.length) {
       void this._refreshGraphView('RX_LOG_DATA');
     }
@@ -2276,7 +2271,7 @@ export class MapPage extends LitElement {
               `)}
             </div>
 
-            ${this._graphRouteActive && this._graphEdges.length ? html`
+            ${this._graphEdges.length ? html`
               <svg class="graph-layer" aria-hidden="true" width="100%" height="100%" viewBox=${`0 0 ${Math.max(1, this._mapSize.width)} ${Math.max(1, this._mapSize.height)}`} preserveAspectRatio="none"><defs><marker id="graph-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,7 L7,3.5 z" class="graph-arrow"></path></marker></defs>
                 ${this._graphEdges.map(edge => {
                   const age = Date.now() - edge.lastSeen;
