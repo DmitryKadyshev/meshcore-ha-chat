@@ -73,6 +73,7 @@ export class MapPage extends LitElement {
   @state() private _deviceSort: 'name' | 'activity' = 'name';
   @state() private _activityNow = Date.now();
   @state() private _showMessage = false;
+  @state() private _graphRouteActive = false;
   @state() private _messageMap: MessageMapState | null = null;
   @state() private _rawRadioRows: RawRadioRow[] = [];
   @state() private _selectedRadioRowId: number | null = null;
@@ -396,7 +397,7 @@ export class MapPage extends LitElement {
     .graph-layer {
       position: absolute;
       inset: 0;
-      z-index: 2;
+      z-index: 5;
       width: 100%;
       height: 100%;
       pointer-events: none;
@@ -610,7 +611,7 @@ export class MapPage extends LitElement {
       if (!entry) return;
       const { width, height } = entry.contentRect;
       this._mapSize = { width, height };
-      if (this._showMessage && this._graphEdges.length) {
+      if (this._graphRouteActive && this._graphEdges.length) {
         this._fitGraph();
       } else if (this._showMessage && this._messageMap) {
         this._fitMessage();
@@ -820,6 +821,7 @@ export class MapPage extends LitElement {
 
   private _showRadioRow(row: RawRadioRow) {
     this._selectedRadioRowId = row.id;
+    this._graphRouteActive = true;
     // A historical RAW_EVENT selection is a technical route selection, not a
     // message-bubble selection. Force the graph mode and clear any stale
     // message overlay before rebuilding the selected packet.
@@ -940,6 +942,7 @@ export class MapPage extends LitElement {
       advertPoint,
     );
     this._graphEdges = graphEdges;
+    this._graphRouteActive = graphEdges.length > 0;
     if (graphEdges.length) {
       void this._refreshGraphView('RX_LOG_DATA');
     }
@@ -2273,7 +2276,7 @@ export class MapPage extends LitElement {
               `)}
             </div>
 
-            ${this._graphEdges.length ? html`
+            ${this._graphRouteActive && this._graphEdges.length ? html`
               <svg class="graph-layer" aria-hidden="true" width="100%" height="100%" viewBox=${`0 0 ${Math.max(1, this._mapSize.width)} ${Math.max(1, this._mapSize.height)}`} preserveAspectRatio="none"><defs><marker id="graph-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,7 L7,3.5 z" class="graph-arrow"></path></marker></defs>
                 ${this._graphEdges.map(edge => {
                   const age = Date.now() - edge.lastSeen;
@@ -2385,7 +2388,7 @@ export class MapPage extends LitElement {
               <thead><tr><th>Время</th><th>Тип</th><th>Маршрут</th><th>Путь</th><th>Сообщение</th><th>Координаты</th><th>SNR</th><th>RSSI</th><th>Шум</th><th>Радио / пакет</th></tr></thead>
               <tbody>
                 ${this._rawRadioRows.map((row, index) => html`
-                  <tr class=${`${index === 0 ? 'latest ' : ''}${row.id === this._selectedRadioRowId ? 'selected' : ''}`.trim()} @click=${() => this._showRadioRow(row)} title="Показать маршрут этого события">
+                  <tr class=${`${index === 0 ? 'latest ' : ''}${row.id === this._selectedRadioRowId ? 'selected' : ''}`.trim()} @click=${(e: Event) => { e.stopPropagation(); this._showRadioRow(row); }} title="Показать маршрут этого события">
                     <td>${row.time}</td><td>${row.type}</td><td>${row.route}</td><td class="path">${row.path}</td><td>${row.message === '—' ? nothing : row.message}</td><td>${row.coordinates}</td>
                     <td>${row.snr}</td><td>${row.rssi}</td><td>${row.noise}</td>
                     <td class=${row.telemetry === '—' ? 'muted' : ''}>${row.telemetry}</td>
