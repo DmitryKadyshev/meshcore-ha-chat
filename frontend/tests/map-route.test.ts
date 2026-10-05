@@ -25,7 +25,7 @@ interface GraphEdge {
   lastSeen: number; flowStartedAt: number; snr?: number; rssi?: number;
 }
 
-interface RawRadioRow { id: number; type: string; route: string; path: string; telemetry: string; }
+interface RawRadioRow { id: number; type: string; route: string; path: string; message?: string; coordinates: string; telemetry: string; }
 
 interface PrivateMapPage {
   _showMessage: boolean;
@@ -360,6 +360,37 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     });
 
     expect(priv(el)._graphEdges).toHaveLength(2);
+  });
+
+  it('renders a long repeated-node ACK/FLOOD path when all hops have coordinates', () => {
+    const prefixes = ['0a18', 'd69c', '5f1c', '2782', 'c2c9', '7300', '0dbb', '79d8', '2121'];
+    el.contacts = prefixes.map((prefix, index) =>
+      makeContact(prefix, `Node ${prefix}`, 50 + index * 0.01, 10 + index * 0.01),
+    );
+    const pathNodes = ['0a18', 'd69c', '5f1c', '2782', 'c2c9', '0a18', 'd69c', '2782', '7300', '0dbb', '79d8', '2121'];
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        payload_type: 3,
+        payload_typename: 'ACK',
+        route_typename: 'FLOOD',
+        path_len: pathNodes.length,
+        path_hash_size: 2,
+        path: pathNodes.join(''),
+      }),
+    });
+
+    const edges = priv(el)._graphEdges;
+    expect(edges).toHaveLength(pathNodes.length - 1);
+    expect(edges[0].from.name).toBe('Node 0a18');
+    expect(edges[0].to.name).toBe('Node d69c');
+    expect(edges.at(-1)?.from.name).toBe('Node 79d8');
+    expect(edges.at(-1)?.to.name).toBe('Node 2121');
+    expect(edges.every(edge =>
+      Number.isFinite(edge.from.lat) && Number.isFinite(edge.from.lon)
+      && Number.isFinite(edge.to.lat) && Number.isFinite(edge.to.lon),
+    )).toBe(true);
   });
 
   it('handles any technical payload type with a path, not only FLOOD ACKs', () => {
@@ -742,6 +773,23 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     // Map position untouched — no zoom-out (BUG-1 class regression).
     expect(priv(el)._zoom).toBe(initialZoom);
     expect(priv(el)._center).toEqual(initialCenter);
+  });
+
+  it('reports coordinate availability for the RAW_EVENT route', () => {
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload(),
+    });
+    expect(priv(el)._rawRadioRows[0].coordinates).toMatch(/^✓ 2\/3/);
+
+    el.contacts = [NODE_5053];
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000001,
+      payload: rxLogPayload(),
+    });
+    expect(priv(el)._rawRadioRows[0].coordinates).toBe('✗ 1/3');
   });
 
   it('technical packet map exposes path details for the RAW_EVENT info line', () => {
