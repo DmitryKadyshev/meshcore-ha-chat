@@ -1039,6 +1039,12 @@ export class MapPage extends LitElement {
         this._messageMap = messageMap;
       }
       this._fitMessage();
+      // meshcore_message normally arrives after RX_LOG_DATA. Its fitMessage()
+      // can move the viewport away from the technical graph that was built
+      // from the same radio packet. Keep the latest packet graph authoritative
+      // for messages too, just like GRP_TXT packets that do not emit a later
+      // meshcore_message event.
+      if (this._graphEdges.length) void this._refreshGraphView('MESSAGE map built');
       this._debugRadioEvent('MESSAGE map built', data, {
         routes: this._messageMap.routes,
         routeCount: this._messageMap.routes.length,
@@ -1069,6 +1075,7 @@ export class MapPage extends LitElement {
         if (!text) return;
         this._messageMap = this._buildMessageMap(data);
         this._fitMessage();
+        if (this._graphEdges.length) void this._refreshGraphView('DELIVERY_UPDATE fallback');
         return;
       }
       if (text && current.text !== text) return;
@@ -1082,6 +1089,7 @@ export class MapPage extends LitElement {
         timestamp: current.timestamp,
       });
       this._fitMessage();
+      if (this._graphEdges.length) void this._refreshGraphView('DELIVERY_UPDATE map built');
     });
     void subscribe('meshcore_raw_event', data => {
       const eventType = String(data.event_type || '').replace(/^EventType\./i, '').toUpperCase();
