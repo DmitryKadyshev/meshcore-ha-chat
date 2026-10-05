@@ -1545,16 +1545,13 @@ export class MapPage extends LitElement {
     const overlay = layer.querySelector('.message-route-overlay');
     if (overlay) {
       const convertToSvg = (source: Element): Element => {
-        if (source.namespaceURI === svgNamespace) {
-          Array.from(source.children).forEach(child => convertToSvg(child));
-          return source;
-        }
+        if (source.namespaceURI === svgNamespace) return source;
         const target = document.createElementNS(svgNamespace, source.tagName.toLowerCase());
         Array.from(source.attributes).forEach(attribute => {
           target.setAttribute(attribute.name, attribute.value);
         });
-        while (source.firstChild) {
-          const child = source.firstChild;
+        const children = Array.from(source.childNodes);
+        for (const child of children) {
           if (child.nodeType === Node.ELEMENT_NODE) {
             target.appendChild(convertToSvg(child as Element));
           } else {
@@ -1564,7 +1561,8 @@ export class MapPage extends LitElement {
         source.replaceWith(target);
         return target;
       };
-      Array.from(overlay.children).forEach(child => convertToSvg(child));
+      const children = Array.from(overlay.children);
+      for (const child of children) convertToSvg(child);
     }
 
     // The arrowhead paint server must exist before markers can reference it.
