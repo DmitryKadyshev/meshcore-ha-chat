@@ -815,7 +815,7 @@ export class MapPage extends LitElement {
       const to = points[i + 1];
       if (!from || !to || from.key === to.key) continue;
       edges.push({
-        id: `${from.key}|${to.key}|${id}|${i}`,
+        id: `${from.key}|${to.key}`,
         from,
         to,
         count: 1,
