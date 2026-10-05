@@ -744,6 +744,38 @@ export class MapPage extends LitElement {
     return null;
   }
 
+  private _extractRadioMessage(...sources: Array<Record<string, unknown> | undefined>): string | undefined {
+    const keys = ['message', 'text', 'message_text', 'msg', 'content'];
+    const seen = new Set<Record<string, unknown>>();
+
+    const visit = (source?: Record<string, unknown>): string | undefined => {
+      if (!source || seen.has(source)) return undefined;
+      seen.add(source);
+
+      for (const key of keys) {
+        const value = source[key];
+        if (typeof value === 'string' && value.trim()) return value;
+        if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+      }
+
+      // MeshCore adapters can put decoded text under parsed/decrypted/payload.
+      for (const key of ['parsed', 'decrypted', 'payload']) {
+        const nested = source[key];
+        if (nested && typeof nested === 'object') {
+          const value = visit(nested as Record<string, unknown>);
+          if (value) return value;
+        }
+      }
+      return undefined;
+    };
+
+    for (const source of sources) {
+      const value = visit(source);
+      if (value) return value;
+    }
+    return undefined;
+  }
+
   private _recordRawRadioEvent(data: Record<string, unknown>, rx?: Record<string, unknown>) {
     const payload = rx || (data.payload && typeof data.payload === 'object' ? data.payload as Record<string, unknown> : undefined);
     const source = payload || data;
@@ -757,8 +789,8 @@ export class MapPage extends LitElement {
     const hashes = payload ? this._pathHashes(payload) : [];
     const type = String(source.payload_typename || source.payload_type || data.event_type || 'UNKNOWN').replace(/^EventType\./, '');
     const route = String(source.route_typename || '—');
-    const rawMessage = source.message ?? source.text ?? data.message ?? data.text;
-    const message = rawMessage === undefined || rawMessage === null || rawMessage === '' ? '—' : String(rawMessage);
+    const rawMessage = this._extractRadioMessage(source, data);
+    const message = rawMessage || '—';
     const snr = source.snr; const rssi = source.rssi;
     const noise = source.noise ?? source.noise_floor ?? source.noise_dbm;
     const telemetryKeys = /^(freq|frequency|bandwidth|bw|sf|spreading_factor|coding_rate|cr|tx_power|channel|payload_length|packet_len|pkt_hash|header)$/i;
@@ -1023,6 +1055,16 @@ export class MapPage extends LitElement {
       const current = this._messageMap;
       const text = String(data.message || '');
       const sender = String(data.sender_name || '');
+
+      if (text) {
+        const latestRow = this._rawRadioRows[0];
+        if (latestRow && latestRow.message === '—') {
+          this._rawRadioRows = [
+            { ...latestRow, message: text },
+            ...this._rawRadioRows.slice(1),
+          ];
+        }
+      }
       if (!current) {
         if (!text) return;
         this._messageMap = this._buildMessageMap(data);
