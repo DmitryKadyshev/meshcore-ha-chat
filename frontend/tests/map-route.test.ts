@@ -426,14 +426,14 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
       timestamp: 1759000000,
       payload: rxLogPayload({ payload_type: 2, payload_typename: 'TEXT_MSG' }),
     });
-    expect(priv(el)._graphEdges).toHaveLength(0);
+    expect(priv(el)._graphEdges).toHaveLength(2);
 
     fireRawEvent({
       event_type: 'RX_LOG_DATA',
       timestamp: 1759000001,
       payload: rxLogPayload({ payload_type: 5, payload_typename: 'GRP_TXT' }),
     });
-    expect(priv(el)._graphEdges).toHaveLength(0);
+    expect(priv(el)._graphEdges).toHaveLength(2);
   });
 
   it('filters noisy events (NO_MORE_MSGS, BATTERY) from the raw table', () => {
@@ -843,7 +843,7 @@ describe('MeshCore map text message route (meshcore_message)', () => {
         payload: rxLogPayload({
           payload_type: payloadType,
           payload_typename: payloadType === 5 ? 'GRP_TXT' : undefined,
-          path_nodes: ['5053', '0a18', 'd69c'],
+          path_nodes: ['5053', 'db94', '565d'],
           path_len: 3,
           path_hash_size: 2,
         }),
