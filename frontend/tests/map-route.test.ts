@@ -420,7 +420,7 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     ]);
   });
 
-  it('leaves text packets (TEXT_MSG / GRP_TXT) to the message map, not the graph', () => {
+  it('builds the technical route graph for TEXT_MSG / GRP_TXT as well', () => {
     fireRawEvent({
       event_type: 'RX_LOG_DATA',
       timestamp: 1759000000,
