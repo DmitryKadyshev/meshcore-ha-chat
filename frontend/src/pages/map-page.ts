@@ -17,6 +17,7 @@ interface TileTransition { tiles: MapTile[]; scale: number; }
 interface RawRadioRow {
   id: number; time: string; type: string; route: string; path: string;
   message: string; coordinates: string; snr: string; rssi: string; noise: string; telemetry: string;
+  hashes: string[]; payloadType?: number; payloadName?: string;
 }
 interface GraphEdge {
   id: string;
@@ -71,6 +72,7 @@ export class MapPage extends LitElement {
   @state() private _showMessage = false;
   @state() private _messageMap: MessageMapState | null = null;
   @state() private _rawRadioRows: RawRadioRow[] = [];
+  @state() private _selectedRadioRowId: number | null = null;
   @state() private _graphEdges: GraphEdge[] = [];
   private _rawRadioRowId = 0;
   private _graphAnimationFrame?: number;
@@ -243,7 +245,10 @@ export class MapPage extends LitElement {
     .radio-table table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
     .radio-table th { position: sticky; top: 0; z-index: 1; padding: 6px 8px; text-align: left; background: var(--secondary-background-color, #f5f5f5); color: var(--secondary-text-color); border-bottom: 1px solid var(--divider-color, #e0e0e0); font-weight: 600; }
     .radio-table td { padding: 5px 8px; border-bottom: 1px solid var(--divider-color, #e0e0e0); color: var(--primary-text-color); vertical-align: top; }
+    .radio-table tr { cursor: pointer; }
+    .radio-table tr:hover td { background: rgba(3, 169, 244, .05); }
     .radio-table tr.latest td { background: rgba(3, 169, 244, .08); }
+    .radio-table tr.selected td { background: rgba(3, 169, 244, .16); }
     .radio-table .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
     .radio-table .muted { color: var(--secondary-text-color); }
     .radio-table-empty { padding: 12px; color: var(--secondary-text-color); font-size: 12px; }
@@ -768,8 +773,51 @@ export class MapPage extends LitElement {
       rssi: this._rawNumber(rssi, rssi !== undefined ? ' dBm' : ''),
       noise: this._rawNumber(noise, noise !== undefined ? ' dBm' : ''),
       telemetry: telemetryEntries.length ? telemetryEntries.join(' · ') : '—',
+      hashes,
+      payloadType: Number.isFinite(Number(source.payload_type)) ? Number(source.payload_type) : undefined,
+      payloadName: type,
     };
     this._rawRadioRows = [row, ...this._rawRadioRows].slice(0, 100);
+  }
+
+  private _showRadioRow(row: RawRadioRow) {
+    this._selectedRadioRowId = row.id;
+    this._showMessage = true;
+    this._messageMap = null;
+
+    // A table row is a historical snapshot of the received path. Resolve it
+    // against the current contact store so clicking an old packet can redraw
+    // its route even after newer packets arrived.
+    if (row.hashes.length >= 2) {
+      const points = this._resolvePathPoints(row.hashes);
+      const now = performance.now();
+      const wallNow = Date.now();
+      const snr = Number.parseFloat(row.snr);
+      const rssi = Number.parseFloat(row.rssi);
+      const edges: GraphEdge[] = [];
+      for (let i = 0; i < points.length - 1; i += 1) {
+        const from = points[i];
+        const to = points[i + 1];
+        if (!from || !to || from.key === to.key) continue;
+        edges.push({
+          id: `${from.key}|${to.key}|${row.id}|${i}`,
+          from,
+          to,
+          count: 1,
+          lastSeen: wallNow,
+          flowStartedAt: now,
+          snr: Number.isFinite(snr) ? snr : undefined,
+          rssi: Number.isFinite(rssi) ? rssi : undefined,
+        });
+      }
+      this._graphEdges = edges;
+      if (edges.length) {
+        this._fitGraph();
+        this._startGraphAnimation();
+      }
+    } else {
+      this._graphEdges = [];
+    }
   }
 
   private _routeCoordinateStatus(hashes: string[]): string {
@@ -2204,7 +2252,7 @@ export class MapPage extends LitElement {
               <thead><tr><th>Время</th><th>Тип</th><th>Маршрут</th><th>Путь</th><th>Сообщение</th><th>Координаты</th><th>SNR</th><th>RSSI</th><th>Шум</th><th>Радио / пакет</th></tr></thead>
               <tbody>
                 ${this._rawRadioRows.map((row, index) => html`
-                  <tr class=${index === 0 ? 'latest' : ''}>
+                  <tr class=${`${index === 0 ? 'latest ' : ''}${row.id === this._selectedRadioRowId ? 'selected' : ''}`.trim()} @click=${() => this._showRadioRow(row)} title="Показать маршрут этого события">
                     <td>${row.time}</td><td>${row.type}</td><td>${row.route}</td><td class="path">${row.path}</td><td>${row.message === '—' ? nothing : row.message}</td><td>${row.coordinates}</td>
                     <td>${row.snr}</td><td>${row.rssi}</td><td>${row.noise}</td>
                     <td class=${row.telemetry === '—' ? 'muted' : ''}>${row.telemetry}</td>
