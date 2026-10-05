@@ -257,7 +257,14 @@ describe('MeshCore map route resolution (_resolvePathPoints)', () => {
   it('parses ordered hashes from raw hex path with fallback widths', () => {
     expect(priv(el)._pathHashes({ path: '5053db94565d', path_len: 3, path_hash_size: 2 }))
       .toEqual(['5053', 'db94', '565d']);
-    expect(priv(el)._pathHashes({ path: '5053db94565d' })).toEqual(['5053', 'db94', '565d']);
+    // No hints at all: MeshCore path IDs are 2–3 bytes, so a bare hex string
+    // must never be split into bogus 1-byte hops. The widest standard width
+    // that divides the path evenly is preferred (matching how the radio event
+    // above resolves to the same three nodes).
+    expect(priv(el)._pathHashes({ path: '5053db94565d' })).toEqual(['5053db', '94565d']);
+    // With path_len as the only hint, the width derives from hop count.
+    expect(priv(el)._pathHashes({ path: '5053db94565d', path_len: 3 }))
+      .toEqual(['5053', 'db94', '565d']);
   });
 });
 
@@ -332,6 +339,9 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     // BUG-1 regression: previously empty bounds collapsed the map to MIN_ZOOM.
     expect(p._zoom).toBeGreaterThan(MIN_ZOOM);
     expect(p._zoom).toBeLessThan(MAX_ZOOM);
+    // A 2°×2° route on an 800×600 viewport fits at zoom 8; the fit adds one
+    // padding level, so the map lands at zoom 9 — never at the world view.
+    expect(p._zoom).toBe(9);
     // Centered on the route midpoint, not the world/default center.
     expect(p._center[0]).toBeCloseTo(51.0, 5);
     expect(p._center[1]).toBeCloseTo(11.0, 5);
@@ -527,6 +537,11 @@ describe('MeshCore map text message route (meshcore_message)', () => {
   });
 
   it('shows the "route unavailable" bubble instead of zooming out when nothing resolves', () => {
+    // Snapshot the untouched default viewport first — _fitAll() runs on mount
+    // and would otherwise overwrite the initial zoom before this assertion.
+    const initialZoom = priv(el)._zoom;
+    const initialCenter = [...priv(el)._center];
+
     fireMessageEvent({
       entity_id: 'sensor.meshcore_5053aa_messages',
       sender_name: 'Unknown Node',
@@ -538,7 +553,8 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     const map = priv(el)._messageMap;
     expect(map!.routes.every(r => r.points.length === 0)).toBe(true);
     // Map position untouched — no zoom-out (BUG-1 class regression).
-    expect(priv(el)._zoom).toBe(5);
+    expect(priv(el)._zoom).toBe(initialZoom);
+    expect(priv(el)._center).toEqual(initialCenter);
   });
 
   it('technical packet map exposes path details for the RAW_EVENT info line', () => {

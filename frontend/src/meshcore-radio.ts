@@ -76,9 +76,9 @@ export function pathHashes(rx: Record<string, unknown>): string[] {
     }
   }
   if (!hashWidth || !Number.isInteger(hashWidth) || hashWidth < 2 || hashWidth > 6) {
-    // Without any reliable hint prefer the widest standard hash size that
-    // divides the path evenly (MeshCore uses 2-byte or 3-byte path IDs);
-    // splitting into 1-byte chunks would fabricate bogus hops.
+    // Without any reliable hint, MeshCore path IDs are 2–3 bytes (4/6 hex
+    // chars). Prefer the widest standard width that divides the path evenly;
+    // only fall back to 1-byte hashes when the length cannot be anything else.
     hashWidth = path.length % 6 === 0 ? 6 : path.length % 4 === 0 ? 4 : 2;
   }
 

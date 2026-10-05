@@ -809,21 +809,30 @@ export class MapPage extends LitElement {
 
   private _fitGraph() {
     const unique = new Map(this._graphEdges.flatMap(edge => [edge.from, edge.to]).map(point => [point.key, point]));
-    const nodes = [...unique.values()];
-    if (nodes.length < 2) return;
+    // BUG-9: invalid coordinates must never reach fitBounds — they collapse
+    // the computed span and force a full-world zoom-out.
+    const nodes = [...unique.values()]
+      .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lon));
+    if (nodes.length === 0) return;
     const minLat = Math.min(...nodes.map(point => point.lat));
     const maxLat = Math.max(...nodes.map(point => point.lat));
     const minLon = Math.min(...nodes.map(point => point.lon));
     const maxLon = Math.max(...nodes.map(point => point.lon));
     this._center = [(minLat + maxLat) / 2, (minLon + maxLon) / 2];
+    if (nodes.length === 1 || (minLat === maxLat && minLon === maxLon)) {
+      this._zoom = 12;
+      return;
+    }
     const width = Math.max(this._mapSize.width - 140, 320);
     const height = Math.max(this._mapSize.height - 140, 240);
-    let zoom = MAX_ZOOM;
-    for (let z = MIN_ZOOM; z <= MAX_ZOOM; z += 1) {
+    // Highest zoom level that still keeps the whole route inside the
+    // viewport, plus one padding level — never below MIN_ZOOM.
+    let best = MIN_ZOOM;
+    for (let z = MAX_ZOOM; z >= MIN_ZOOM; z -= 1) {
       const [x1, y1] = project(minLat, minLon, z); const [x2, y2] = project(maxLat, maxLon, z);
-      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { zoom = z; break; }
+      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { best = z; break; }
     }
-    this._zoom = Math.max(MIN_ZOOM, zoom - 1);
+    this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best + 1));
   }
 
   private _startGraphAnimation() {
@@ -1300,7 +1309,9 @@ export class MapPage extends LitElement {
     const sender = String(data.sender_name || 'Unknown node');
     const channel = String(data.channel || '');
     const target = channel ? `#${channel}` : sender;
-    const senderPrefix = String(data.pubkey_prefix || '').toLowerCase();
+    // MeshCore pubkey prefixes are 8 hex chars; path IDs are the first 2–3
+    // bytes (4–6 chars), so match on that shorter prefix.
+    const senderPrefix = String(data.pubkey_prefix || '').toLowerCase().replace(/[^0-9a-f]/g, '').slice(0, 6);
     const senderContact = (senderPrefix ? this._findContactByHash(senderPrefix) : undefined)
       || this.contacts.find(contact =>
         hasCoordinates(contact)
@@ -1360,7 +1371,10 @@ export class MapPage extends LitElement {
 
   private _fitMessage() {
     if (!this._showMessage || !this._messageMap) return;
-    const points = this._messageMap.routes.flatMap(route => route.points);
+    // BUG-9: only finite coordinates may enter the fit bounds.
+    const points = this._messageMap.routes
+      .flatMap(route => route.points)
+      .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lon));
     // If the route cannot be resolved to known node coordinates, keep the
     // map exactly where the user currently has it. The message bubble is
     // rendered independently of map coordinates in that case.
@@ -1370,15 +1384,17 @@ export class MapPage extends LitElement {
     const minLon = Math.min(...points.map(point => point.lon));
     const maxLon = Math.max(...points.map(point => point.lon));
     this._center = [(minLat + maxLat) / 2, (minLon + maxLon) / 2];
-    if (points.length === 1) { this._zoom = 12; return; }
+    if (points.length === 1 || (minLat === maxLat && minLon === maxLon)) { this._zoom = 12; return; }
     const width = Math.max(this._mapSize.width - 120, 320);
     const height = Math.max(this._mapSize.height - 120, 240);
-    let zoom = MAX_ZOOM;
-    for (let z = MIN_ZOOM; z <= MAX_ZOOM; z++) {
+    // Highest zoom level that still keeps the whole route inside the
+    // viewport, plus one padding level — never below MIN_ZOOM.
+    let best = MIN_ZOOM;
+    for (let z = MAX_ZOOM; z >= MIN_ZOOM; z--) {
       const [x1, y1] = project(minLat, minLon, z); const [x2, y2] = project(maxLat, maxLon, z);
-      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { zoom = z; break; }
+      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { best = z; break; }
     }
-    this._zoom = Math.max(MIN_ZOOM, zoom - 1);
+    this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best + 1));
   }
 
   private _messageBubblePoint(): { left: number; top: number } {
