@@ -332,6 +332,21 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     // Intermediate node without GPS still gets a visible vertex.
     const vertices = el.shadowRoot!.querySelectorAll('.graph-node');
     expect(vertices.length).toBe(3);
+
+    // The graph must contain actual painted SVG geometry, not just DOM nodes.
+    const renderedLines = [...el.shadowRoot!.querySelectorAll('line.graph-edge')];
+    for (const line of renderedLines) {
+      const values = ['x1', 'y1', 'x2', 'y2'].map(name => Number(line.getAttribute(name)));
+      expect(values.every(Number.isFinite)).toBe(true);
+      expect(values[0] !== values[2] || values[1] !== values[3]).toBe(true);
+      expect(line.getAttribute('marker-end')).toBe('url(#graph-arrow)');
+      expect(line.getAttribute('data-graph-edge')).toBeTruthy();
+    }
+    for (const node of [...vertices]) {
+      expect(Number.isFinite(Number(node.getAttribute('cx')))).toBe(true);
+      expect(Number.isFinite(Number(node.getAttribute('cy')))).toBe(true);
+      expect(node.getAttribute('data-graph-node')).toBeTruthy();
+    }
   });
 
   it('keeps extra viewport margin when fitting the graph', () => {
