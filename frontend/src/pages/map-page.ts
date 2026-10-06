@@ -877,7 +877,16 @@ export class MapPage extends LitElement {
     extraPoint?: MessageMapPoint,
   ): GraphEdge[] {
     if (hashes.length < 1 && !extraPoint) return [];
-    const points = this._resolvePathPoints(hashes);
+    // For ADVERT/FLOOD the advertised node is not part of the path hash
+    // list, but its coordinates are a real geographic anchor. Pass it into
+    // path resolution before filtering unresolved hops so missing contacts
+    // can be interpolated/extrapolated instead of collapsing the route.
+    const points = this._resolvePathPoints(
+      hashes,
+      extraPoint && Number.isFinite(extraPoint.lat) && Number.isFinite(extraPoint.lon)
+        ? [extraPoint]
+        : undefined,
+    );
     if (extraPoint && Number.isFinite(extraPoint.lat) && Number.isFinite(extraPoint.lon)) {
       if (!points.length || points[points.length - 1].key !== extraPoint.key) {
         points.push(extraPoint);
