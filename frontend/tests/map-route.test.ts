@@ -40,6 +40,8 @@ interface PrivateMapPage {
   _latestRadioRx: Record<string, unknown> | null;
   _rawRadioRows: RawRadioRow[];
   _selectedRadioRowId: number | null;
+  _showRadioEvent: boolean;
+  _toggleRadioEvent(): void;
   _pathHashes(rx: Record<string, unknown>): string[];
   _resolvePathPoints(hashes: string[]): MessageMapPoint[];
   _recordFloodGraph(data: Record<string, unknown>, rx?: Record<string, unknown>): void;
@@ -1119,5 +1121,147 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     expect(packetMap.text).toContain('SNR -12.5 dB');
     expect(packetMap.text).toContain('RSSI -98 dBm');
     expect(packetMap.routes[0].hashPath).toEqual(['5053', 'db94', '565d']);
+  });
+});
+
+describe('MeshCore map route clearing and "Show radio event" toggle', () => {
+  let el: MapPage;
+
+  beforeEach(async () => {
+    capturedHandlers = new Map();
+    el = await mountMapPage();
+    await el.updateComplete;
+  });
+
+  afterEach(() => {
+    el.remove();
+  });
+
+  it('renders the "Show radio event" toggle, on by default', () => {
+    const toggle = el.shadowRoot!.querySelector('.radio-event-toggle input[type="checkbox"]') as HTMLInputElement | null;
+    expect(toggle).toBeTruthy();
+    expect(toggle!.checked).toBe(true);
+    expect(priv(el)._showRadioEvent).toBe(true);
+  });
+
+  it('clears the previous route when a new radio event is drawn', async () => {
+    el.contacts = [
+      NODE_5053,
+      NODE_DB94,
+      NODE_565D,
+      makeContact('0a18', 'Node 0a18', 50.5, 10.5),
+      makeContact('d69c', 'Node d69c', 51.0, 11.0),
+    ];
+
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        path_nodes: ['5053', 'db94', '565d'],
+        path_len: 3,
+        path_hash_size: 2,
+        path: '5053db94565d',
+      }),
+    });
+    await el.updateComplete;
+
+    const firstIds = priv(el)._graphEdges.map(edge => edge.id);
+    expect(firstIds).toEqual([
+      `${keyFor('5053')}|${keyFor('db94')}`,
+      `${keyFor('db94')}|${keyFor('565d')}`,
+    ]);
+    expect(el.shadowRoot!.querySelector('.graph-layer')).toBeTruthy();
+
+    // A completely different route must replace the previous one — the old
+    // edges must not accumulate on the map.
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000001,
+      payload: rxLogPayload({
+        path_nodes: ['5053', '0a18', 'd69c'],
+        path_len: 3,
+        path_hash_size: 2,
+        path: '50530a18d69c',
+      }),
+    });
+    await el.updateComplete;
+
+    const secondIds = priv(el)._graphEdges.map(edge => edge.id);
+    expect(secondIds).toEqual([
+      `${keyFor('5053')}|${keyFor('0a18')}`,
+      `${keyFor('0a18')}|${keyFor('d69c')}`,
+    ]);
+    // None of the previous route's edges survive — the map was cleared first.
+    expect(secondIds.every(id => !firstIds.includes(id))).toBe(true);
+  });
+
+  it('hides and clears the route graph when "Show radio event" is turned off', async () => {
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload(),
+    });
+    await el.updateComplete;
+    expect(priv(el)._graphEdges).toHaveLength(2);
+    expect(el.shadowRoot!.querySelector('.graph-layer')).toBeTruthy();
+
+    priv(el)._toggleRadioEvent();
+    await el.updateComplete;
+
+    expect(priv(el)._showRadioEvent).toBe(false);
+    // The map is cleared of every previous route.
+    expect(priv(el)._graphEdges).toHaveLength(0);
+    expect(priv(el)._messageMap).toBeNull();
+    expect(el.shadowRoot!.querySelector('.graph-layer')).toBeNull();
+  });
+
+  it('does not draw a route while "Show radio event" is off, then draws the next one when toggled on', async () => {
+    priv(el)._toggleRadioEvent(); // off
+    await el.updateComplete;
+
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload(),
+    });
+    await el.updateComplete;
+
+    // The route is captured in memory but never rendered while the toggle is off.
+    expect(priv(el)._graphEdges).toHaveLength(2);
+    expect(el.shadowRoot!.querySelector('.graph-layer')).toBeNull();
+
+    priv(el)._toggleRadioEvent(); // on
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('.graph-layer')).toBeTruthy();
+    expect(priv(el)._graphEdges).toHaveLength(2);
+  });
+
+  it('never renders a message bubble or message route layer on the map', async () => {
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({ payload_type: 2, payload_typename: 'TEXT_MSG' }),
+    });
+    fireMessageEvent({
+      entity_id: 'sensor.meshcore_5053aa_messages',
+      sender_name: 'Node 565D',
+      pubkey_prefix: '565daa55',
+      message: 'hello mesh',
+      channel: 'general',
+      timestamp: 1759000000,
+      rx_log_data: [{
+        path_len: 3,
+        path_hash_size: 2,
+        path: '5053db94565d',
+        path_nodes: ['5053', 'db94', '565d'],
+        snr: -12.5,
+        rssi: -98,
+      }],
+    });
+    await el.updateComplete;
+
+    expect(el.shadowRoot!.querySelector('.message-bubble')).toBeNull();
+    expect(el.shadowRoot!.querySelector('.message-route-layer')).toBeNull();
   });
 });

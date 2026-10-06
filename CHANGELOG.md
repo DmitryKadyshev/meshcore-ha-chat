@@ -7,6 +7,7 @@ All notable changes to **MeshCore Chat for Home Assistant** are documented here.
 ### Fixed
 
 - **MeshCore message route overlay was invisible despite valid route coordinates.** The route overlay now renders its `<line>`, `<circle>`, and `<text>` fragments with Lit's SVG template type so the elements are created in the SVG namespace. Geometry is also re-applied after render as a defensive measure, and a DOM regression test verifies SVG namespaces and finite, non-degenerate coordinates.
+- **Map tab accumulated previous radio-event routes and overlaid a message marker.** Drawing a new route now clears the map of every previous route first — only the latest radio-event route is ever shown. The "Show latest radio event" toggle is renamed to **Show radio event** and rebuilt with correct logic: turning it off clears the route graph, the packet animation and any stale message state so only device markers remain, and no message bubble/marker is rendered on top of the map. Regression tests cover route replacement, the toggle's clear/hide behaviour, and the absence of a message overlay.
 
 
 ## [0.3.1] - 2026-06-24

@@ -76,6 +76,8 @@ export class MapPage extends LitElement {
   @state() private _rawRadioRows: RawRadioRow[] = [];
   @state() private _selectedRadioRowId: number | null = null;
   @state() private _graphEdges: GraphEdge[] = [];
+  /** "Show radio event" toggle: render the latest radio-event route on the map. */
+  @state() private _showRadioEvent = true;
   private _rawRadioRowId = 0;
   private _graphAnimationFrame?: number;
   private _graphRefreshToken = 0;
@@ -512,6 +514,30 @@ export class MapPage extends LitElement {
       background: var(--secondary-background-color, #f5f5f5);
     }
 
+    .radio-event-toggle {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 7px;
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      font-size: 12px;
+      cursor: pointer;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, .18);
+      user-select: none;
+    }
+
+    .radio-event-toggle input {
+      margin: 0;
+      cursor: pointer;
+    }
+
     .empty-map {
       position: absolute;
       inset: 0;
@@ -906,6 +932,10 @@ export class MapPage extends LitElement {
   }
 
   private async _refreshGraphView(reason: string) {
+    // When "Show radio event" is off the route must not be drawn, fitted or
+    // animated — building _graphEdges in memory is fine, but the viewport must
+    // never jump to a hidden route.
+    if (!this._showRadioEvent) return;
     const refreshToken = ++this._graphRefreshToken;
     if (!this._graphEdges.length) return;
 
@@ -1123,6 +1153,9 @@ export class MapPage extends LitElement {
 
   private _animateGraph = (now: number) => {
     this._graphAnimationFrame = undefined;
+    // Stop the rAF loop as soon as the toggle is off — the graph layer is not
+    // rendered, so there is nothing to animate and the loop must not spin.
+    if (!this._showRadioEvent) return;
     const live = this._graphEdges.filter(edge => Date.now() - edge.lastSeen < MapPage.GRAPH_TTL_MS);
     if (live.length !== this._graphEdges.length) this._graphEdges = live;
     if (!live.length) return;
@@ -1140,6 +1173,34 @@ export class MapPage extends LitElement {
     }
     this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
   };
+
+  private _stopGraphAnimation() {
+    if (this._graphAnimationFrame !== undefined) {
+      window.cancelAnimationFrame(this._graphAnimationFrame);
+      this._graphAnimationFrame = undefined;
+    }
+  }
+
+  /**
+   * "Show radio event" toggle. When turned off the map is cleared of every
+   * previous route (the graph edges, the packet animation and any stale message
+   * marker) so only the device markers remain. Turning it back on waits for the
+   * next radio event before drawing a fresh route — the old route is never
+   * resurrected.
+   */
+  private _toggleRadioEvent() {
+    this._showRadioEvent = !this._showRadioEvent;
+    if (!this._showRadioEvent) {
+      // Clear the map of every previous route so only device markers remain.
+      this._graphEdges = [];
+      this._messageMap = null;
+      this._stopGraphAnimation();
+    } else if (this._graphEdges.length) {
+      // A route was captured while the toggle was off — fit and animate it now.
+      void this._refreshGraphView('Show radio event toggled on');
+    }
+  }
+
   private _setupMessageSubscriptions() {
     this._teardownMessageSubscriptions();
     if (!this._messageSubscriptionsActive || !this.hass?.connection?.subscribeEvents) return;
@@ -2093,7 +2154,7 @@ export class MapPage extends LitElement {
               `)}
             </div>
 
-            ${this._graphEdges.length ? html`
+            ${this._showRadioEvent && this._graphEdges.length ? html`
               <svg class="graph-layer" aria-hidden="true" width="100%" height="100%" viewBox=${`0 0 ${Math.max(1, this._mapSize.width)} ${Math.max(1, this._mapSize.height)}`} preserveAspectRatio="none"><defs><marker id="graph-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,7 L7,3.5 z" class="graph-arrow"></path></marker></defs>
                 ${this._graphEdges.map(edge => {
                   const age = Date.now() - edge.lastSeen;
@@ -2145,6 +2206,18 @@ export class MapPage extends LitElement {
                     })()}
                   </div>
           </div>
+
+          <label
+            class="radio-event-toggle"
+            title="Show the latest radio-event route on the map"
+            @pointerdown=${(e: PointerEvent) => e.stopPropagation()}
+            @dblclick=${(e: MouseEvent) => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              .checked=${this._showRadioEvent}
+              @change=${() => this._toggleRadioEvent()}>
+            <span>Show radio event</span>
+          </label>
 
         <div
             class="controls"
