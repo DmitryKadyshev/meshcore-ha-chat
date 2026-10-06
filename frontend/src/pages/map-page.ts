@@ -1071,6 +1071,76 @@ export class MapPage extends LitElement {
     this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best - 1));
   }
 
+  /**
+   * Lit reliably creates the graph SVG, but some browsers can retain stale
+   * SVG geometry after a map viewport update. Re-apply the graph geometry
+   * directly to the rendered SVG, just like the message-route overlay.
+   */
+  private _wireGraphLayer() {
+    const root = this.shadowRoot;
+    if (!root || !this._graphEdges.length) return;
+
+    const layer = root.querySelector('svg.graph-layer') as SVGSVGElement | null;
+    if (!layer) return;
+
+    const width = Math.max(1, this._mapSize.width);
+    const height = Math.max(1, this._mapSize.height);
+    layer.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+    const edgesById = new Map(this._graphEdges.map(edge => [edge.id, edge]));
+    root.querySelectorAll<SVGLineElement>('svg.graph-layer line.graph-edge').forEach(line => {
+      const id = line.getAttribute('data-graph-edge');
+      const edge = id ? edgesById.get(id) : undefined;
+      if (!edge) return;
+      const from = this._mapPoint(edge.from.lat, edge.from.lon);
+      const to = this._mapPoint(edge.to.lat, edge.to.lon);
+      if (![from.left, from.top, to.left, to.top].every(Number.isFinite)) return;
+      line.setAttribute('x1', String(from.left));
+      line.setAttribute('y1', String(from.top));
+      line.setAttribute('x2', String(to.left));
+      line.setAttribute('y2', String(to.top));
+      line.setAttribute('marker-end', 'url(#graph-arrow)');
+    });
+
+    const points = new Map<string, MessageMapPoint>();
+    for (const edge of this._graphEdges) {
+      points.set(edge.from.key, edge.from);
+      points.set(edge.to.key, edge.to);
+    }
+
+    root.querySelectorAll<SVGCircleElement>('svg.graph-layer circle.graph-node').forEach(node => {
+      const key = node.getAttribute('data-graph-node');
+      const point = key ? points.get(key) : undefined;
+      if (!point) return;
+      const pos = this._mapPoint(point.lat, point.lon);
+      if (![pos.left, pos.top].every(Number.isFinite)) return;
+      node.setAttribute('cx', String(pos.left));
+      node.setAttribute('cy', String(pos.top));
+    });
+
+    root.querySelectorAll<SVGTextElement>('svg.graph-layer text.graph-node-label').forEach(label => {
+      const key = label.getAttribute('data-graph-node-label');
+      const point = key ? points.get(key) : undefined;
+      if (!point) return;
+      const pos = this._mapPoint(point.lat, point.lon);
+      if (![pos.left, pos.top].every(Number.isFinite)) return;
+      label.setAttribute('x', String(pos.left + 10));
+      label.setAttribute('y', String(pos.top - 10));
+    });
+
+    root.querySelectorAll<SVGCircleElement>('svg.graph-layer circle.graph-packet').forEach(packet => {
+      const key = packet.getAttribute('data-graph-packet');
+      const edge = key
+        ? this._graphEdges.find(candidate => candidate.id.replace(/[^a-zA-Z0-9_-]/g, '_') === key)
+        : undefined;
+      if (!edge) return;
+      const pos = this._mapPoint(edge.from.lat, edge.from.lon);
+      if (![pos.left, pos.top].every(Number.isFinite)) return;
+      packet.setAttribute('cx', String(pos.left));
+      packet.setAttribute('cy', String(pos.top));
+    });
+  }
+
   private _startGraphAnimation() {
     if (this._graphAnimationFrame === undefined) this._graphAnimationFrame = window.requestAnimationFrame(this._animateGraph);
   }
@@ -1316,6 +1386,7 @@ export class MapPage extends LitElement {
     // imperatively after every render so the route arrows and packets can
     // never be lost to template/bundle quirks.
     this._wireRouteOverlay();
+    this._wireGraphLayer();
 
     if (changedProperties.has('_graphEdges')) {
       this._startGraphAnimation();
@@ -2316,9 +2387,9 @@ export class MapPage extends LitElement {
                   const from = this._mapPoint(edge.from.lat, edge.from.lon);
                   const to = this._mapPoint(edge.to.lat, edge.to.lon);
                   const key = edge.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-                  return html`<line class="graph-edge ${age < 15000 ? 'active' : ''}" x1=${from.left} y1=${from.top} x2=${to.left} y2=${to.top} marker-end="url(#graph-arrow)" style="opacity:${opacity};stroke-width:${width}px"></line><circle class="graph-packet" data-graph-packet=${key} cx=${from.left} cy=${from.top} r="4"></circle>`;
+                  return html`<line class="graph-edge ${age < 15000 ? 'active' : ''}" data-graph-edge=${edge.id} x1=${from.left} y1=${from.top} x2=${to.left} y2=${to.top} marker-end="url(#graph-arrow)" style="opacity:${opacity};stroke-width:${width}px"></line><circle class="graph-packet" data-graph-packet=${key} cx=${from.left} cy=${from.top} r="4"></circle>`;
                 })}
-                ${[...new Map(this._graphEdges.flatMap(edge => [edge.from, edge.to]).map(point => [point.key, point])).values()].map(point => { const pos = this._mapPoint(point.lat, point.lon); return html`<g class="graph-node-group"><circle class="graph-node" cx=${pos.left} cy=${pos.top} r="7"></circle><text class="graph-node-label" x=${pos.left + 10} y=${pos.top - 10}>${point.key.slice(0, 4)}</text></g>`; })}
+                ${[...new Map(this._graphEdges.flatMap(edge => [edge.from, edge.to]).map(point => [point.key, point])).values()].map(point => { const pos = this._mapPoint(point.lat, point.lon); return html`<g class="graph-node-group"><circle class="graph-node" data-graph-node=${point.key} cx=${pos.left} cy=${pos.top} r="7"></circle><text class="graph-node-label" data-graph-node-label=${point.key} x=${pos.left + 10} y=${pos.top - 10}>${point.key.slice(0, 4)}</text></g>`; })}
               </svg>
             ` : nothing}
             ${this._showMessage
