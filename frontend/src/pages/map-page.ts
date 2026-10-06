@@ -410,40 +410,6 @@ export class MapPage extends LitElement {
     .graph-node-label { fill: var(--primary-text-color,#222); font-size: 11px; font-weight: 600; paint-order: stroke; stroke: var(--card-background-color,#fff); stroke-width: 3px; stroke-linejoin: round; }
     .graph-packet { fill: #fff; stroke: rgba(3,169,244,.98); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(3,169,244,.9)); }
 
-.message-route-layer {
-      position: absolute;
-      inset: 0;
-      z-index: 3;
-      width: 100%;
-      height: 100%;
-      display: block;
-      overflow: visible;
-      pointer-events: none;
-    }
-    .message-route { fill: none; stroke: rgba(3,169,244,.92); stroke-width: 4; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 10 9; filter: drop-shadow(0 0 3px rgba(3,169,244,.55)); animation: message-route-flow 900ms linear infinite; }
-    .message-route.secondary { stroke: rgba(255,152,0,.78); stroke-width: 3.5; filter: drop-shadow(0 0 3px rgba(255,152,0,.48)); animation-duration: 1050ms; }
-    .message-route-glow { fill: none; stroke: rgba(255,255,255,.28); stroke-width: 8; stroke-linecap: round; stroke-linejoin: round; filter: blur(3px); animation: message-route-pulse 1.5s ease-in-out infinite; }
-    .message-route-arrowhead { fill: rgba(3,169,244,.95); }
-    .message-route.secondary .message-route-arrowhead { fill: rgba(255,152,0,.9); }
-    .message-route-packet { fill: #fff; stroke: rgba(3,169,244,.95); stroke-width: 2; filter: drop-shadow(0 0 5px rgba(3,169,244,.95)); }
-    .message-route-packet.secondary { fill: #fff; stroke: rgba(255,152,0,.95); filter: drop-shadow(0 0 5px rgba(255,152,0,.9)); }
-    @keyframes message-route-flow { to { stroke-dashoffset: -38px; } }
-    @keyframes message-route-pulse { 0%, 100% { opacity: .35; } 50% { opacity: .9; } }
-    .message-node { fill: var(--card-background-color,#fff); stroke: var(--primary-color,#03a9f4); stroke-width: 3; filter: drop-shadow(0 0 4px rgba(3,169,244,.75)); }
-    .message-node.sender { fill: rgba(3,169,244,.95); stroke: #fff; stroke-width: 2.5; }
-    .message-node-core { fill: var(--primary-color,#03a9f4); animation: message-node-pulse 1.4s ease-in-out infinite; }
-    .message-node-core.sender { fill: #fff; }
-    @keyframes message-node-pulse { 0%, 100% { r: 4; opacity: .75; } 50% { r: 7; opacity: 1; } }
-    .message-hop-label { font-size: 10px; font-weight: 700; fill: var(--primary-text-color,#222); paint-order: stroke; stroke: rgba(255,255,255,.92); stroke-width: 3px; stroke-linejoin: round; }
-    .message-bubble { position: absolute; z-index: 5; max-width: min(360px,calc(100% - 32px)); min-width: 180px; padding: 10px 12px; border: 1px solid rgba(3,169,244,.45); border-radius: 12px; background: rgba(255,255,255,.94); color: #222; box-shadow: 0 4px 16px rgba(0,0,0,.28); transform: translate(14px,calc(-100% - 14px)); pointer-events: none; overflow: hidden; }
-    .message-bubble.no-route { transform: translateX(-50%); }
-    .message-bubble.no-route::after { display: none; }
-    .message-bubble::after { content: ''; position: absolute; left: 10px; bottom: -7px; width: 14px; height: 14px; background: rgba(255,255,255,.94); border-right: 1px solid rgba(3,169,244,.45); border-bottom: 1px solid rgba(3,169,244,.45); transform: rotate(45deg); }
-    .message-bubble-title { position: relative; z-index: 1; font-size: 12px; font-weight: 700; color: var(--primary-color,#03a9f4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .message-bubble-sender { position: relative; z-index: 1; margin-top: 2px; font-size: 10px; color: var(--secondary-text-color,#666); }
-    .message-bubble-text { position: relative; z-index: 1; margin-top: 5px; font-size: 13px; line-height: 1.3; white-space: pre-wrap; overflow-wrap: anywhere; }
-    .message-bubble-route { position: relative; z-index: 1; margin-top: 6px; font-size: 10px; color: var(--secondary-text-color,#666); }
-
     .marker {
       position: absolute;
       width: 18px;
@@ -613,7 +579,6 @@ export class MapPage extends LitElement {
       if (this._graphEdges.length) {
         this._fitGraph();
       } else if (this._showMessage && this._messageMap) {
-        this._fitMessage();
       } else {
         this._fitAll();
       }
@@ -836,31 +801,8 @@ export class MapPage extends LitElement {
         payloadType === 5 ||
         payloadTypeName === 'TEXT_MSG' ||
         payloadTypeName === 'GRP_TXT';
-
-      // Keep the technical flood graph in sync with the selected historical
-      // packet, but use the message map as the authoritative user-facing
-      // route overlay, exactly like the live RX_LOG_DATA path.
+      // History uses exactly the same technical graph and animation as a live packet.
       this._recordFloodGraph(row.eventData, row.rxData);
-
-      // payload_type=4 is never a text packet, so the old `&& isTextPacket`
-      // guard made this advert branch unreachable — selecting an ADVERT row
-      // only rebuilt the technical graph. Render the advert overlay instead.
-      if (payloadType === 4) {
-        const advertMap = this._buildAdvertMap(row.rxData);
-        this._messageMap = advertMap;
-        if (!advertMap.routes.length) this._messageMap = null;
-        else this._fitMessage();
-        return;
-      }
-
-      if (isTextPacket) {
-        const packetMap = this._buildPacketMap(row.rxData);
-        this._messageMap = packetMap;
-        this._fitMessage();
-        return;
-      }
-
-      // Non-text packets are technical events and have no message overlay.
       this._messageMap = null;
       if (this._graphEdges.length) void this._refreshGraphView('RAW_EVENT row');
       return;
@@ -1242,7 +1184,7 @@ export class MapPage extends LitElement {
         showMessage: this._showMessage,
         rxLogData: data.rx_log_data,
       });
-      if (!this._showMessage || !this._eventBelongsToDevice(data)) return;
+      if (!this._eventBelongsToDevice(data)) return;
       const messageMap = this._buildMessageMap(data);
       // meshcore_message can arrive immediately after RX_LOG_DATA for the
       // same packet. RX_LOG_DATA carries the full radio path while the
@@ -1274,7 +1216,6 @@ export class MapPage extends LitElement {
           timestamp: messageMap.timestamp,
         };
       }
-      this._fitMessage();
       // meshcore_message normally arrives after RX_LOG_DATA. Its fitMessage()
       // can move the viewport away from the technical graph that was built
       // from the same radio packet. Keep the latest packet graph authoritative
@@ -1310,7 +1251,6 @@ export class MapPage extends LitElement {
       if (!current) {
         if (!text) return;
         this._messageMap = this._buildMessageMap(data);
-        this._fitMessage();
         if (this._graphEdges.length) void this._refreshGraphView('DELIVERY_UPDATE fallback');
         return;
       }
@@ -1324,7 +1264,6 @@ export class MapPage extends LitElement {
         pubkey_prefix: current.pubkeyPrefix,
         timestamp: current.timestamp,
       });
-      this._fitMessage();
       if (this._graphEdges.length) void this._refreshGraphView('DELIVERY_UPDATE map built');
     });
     void subscribe('meshcore_raw_event', data => {
@@ -1347,7 +1286,7 @@ export class MapPage extends LitElement {
         this._selectedRadioRowId = null;
         this._latestRadioEventData = { ...data };
         this._latestRadioRx = { ...rx, timestamp: data.timestamp };
-        if (this._showMessage) this._recordFloodGraph(data, rx);
+        this._recordFloodGraph(data, rx);
       }
 
       this._debugRadioEvent('RAW_EVENT received', data, {
@@ -1366,7 +1305,7 @@ export class MapPage extends LitElement {
         rssi: rx?.rssi,
       });
 
-      if (!this._showMessage || eventType !== 'RX_LOG_DATA' || !rx) return;
+      if (eventType !== 'RX_LOG_DATA' || !rx) return;
 
       const payloadType = Number(rx.payload_type);
       const isTextPacket = payloadType === 2 || payloadType === 5 || payloadTypeName === 'TEXT_MSG' || payloadTypeName === 'GRP_TXT';
@@ -1398,7 +1337,6 @@ export class MapPage extends LitElement {
           this._messageMap = null;
           if (this._graphEdges.length) void this._refreshGraphView('ADVERT');
         } else {
-          this._fitMessage();
         }
 
         this._debugRadioEvent('ADVERT map built', data, {
@@ -1440,7 +1378,6 @@ export class MapPage extends LitElement {
       // bubble from a previous packet.
       if (packetMap.routes.length || isTextPacket) {
         this._messageMap = packetMap;
-        this._fitMessage();
       } else {
         this._messageMap = null;
         if (this._graphEdges.length) void this._refreshGraphView('packet fallback');
@@ -1471,7 +1408,6 @@ export class MapPage extends LitElement {
     // Paint-server attributes (marker arrowheads, mpath motion refs) are set
     // imperatively after every render so the route arrows and packets can
     // never be lost to template/bundle quirks.
-    this._wireRouteOverlay();
     this._wireGraphLayer();
 
     if (changedProperties.has('_graphEdges')) {
@@ -1484,27 +1420,8 @@ export class MapPage extends LitElement {
       );
       if (!hadSelected) this._selectedKey = null;
 
-      if (this._showMessage && this._latestRadioRx) {
-        const latestType = Number(this._latestRadioRx.payload_type);
-        const latestTypeName = String(this._latestRadioRx.payload_typename || '').replace(/^EventType\./i, '').toUpperCase();
-        const latestIsText = latestType === 2 || latestType === 5 || latestTypeName === 'TEXT_MSG' || latestTypeName === 'GRP_TXT';
-
-        if (latestIsText) {
-          const packetMap = this._buildPacketMap(this._latestRadioRx);
-          if (packetMap.routes.length || !this._messageMap?.routes.length) {
-            this._messageMap = packetMap;
-            this._fitMessage();
-          }
-        } else {
-          this._messageMap = null;
-          // Rebuild technical routes after the contact store changes. RX_LOG_DATA
-          // can arrive before the corresponding contacts/coordinates are synced.
-          if (this._latestRadioEventData && this._latestRadioRx) {
-            this._recordFloodGraph(this._latestRadioEventData, this._latestRadioRx);
-          } else if (this._graphEdges.length) {
-            void this._refreshGraphView('contacts updated');
-          }
-        }
+      if (this._latestRadioEventData && this._latestRadioRx) {
+        this._recordFloodGraph(this._latestRadioEventData, this._latestRadioRx);
       } else {
         this._fitAll();
       }
@@ -1933,128 +1850,6 @@ export class MapPage extends LitElement {
    * shipped bundle was transpiled/minified — template-bound url(#…) strings
    * proved unreliable in production WebViews, hiding exactly these icons.
    */
-  private _wireRouteOverlay() {
-    const root = this.shadowRoot;
-    if (!root) return;
-    const layer = root.querySelector('svg.message-route-layer');
-    if (!layer || !layer.querySelector('.message-route-overlay')) return;
-
-    // Defensive compatibility layer: older/stale bundles may have created
-    // route fragments from an HTML template instead of Lit's SVG template.
-    // Convert such descendants to the SVG namespace before touching geometry
-    // or SVG paint-server references.
-    const svgNamespace = 'http://www.w3.org/2000/svg';
-    const overlay = layer.querySelector('.message-route-overlay');
-    if (overlay) {
-      const convertToSvg = (source: Element): Element => {
-        if (source.namespaceURI === svgNamespace) return source;
-        const target = document.createElementNS(svgNamespace, source.tagName.toLowerCase());
-        Array.from(source.attributes).forEach(attribute => {
-          target.setAttribute(attribute.name, attribute.value);
-        });
-        const children = Array.from(source.childNodes);
-        for (const child of children) {
-          if (child.nodeType === Node.ELEMENT_NODE) {
-            target.appendChild(convertToSvg(child as Element));
-          } else {
-            target.appendChild(child);
-          }
-        }
-        source.replaceWith(target);
-        return target;
-      };
-      const children = Array.from(overlay.children);
-      for (const child of children) convertToSvg(child);
-    }
-
-    // The arrowhead paint server must exist before markers can reference it.
-    // Build it imperatively so no url(#…) fragment ever has to survive the
-    // template-literal transpilation of the shipped bundle.
-    let defs = layer.querySelector('defs');
-    if (!defs) {
-      defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-      layer.insertBefore(defs, layer.firstChild);
-    }
-    if (!defs.querySelector('#' + MapPage.ROUTE_ARROW_MARKER_ID)) {
-      const marker = document.createElementNS('http://www.w3.org/2000/svg', 'marker');
-      marker.setAttribute('id', MapPage.ROUTE_ARROW_MARKER_ID);
-      marker.setAttribute('markerWidth', '8');
-      marker.setAttribute('markerHeight', '8');
-      marker.setAttribute('refX', '7');
-      marker.setAttribute('refY', '3.5');
-      marker.setAttribute('orient', 'auto');
-      marker.setAttribute('markerUnits', 'strokeWidth');
-      const head = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      head.setAttribute('d', 'M0,0 L0,7 L7,3.5 z');
-      head.setAttribute('class', 'message-route-arrowhead');
-      marker.appendChild(head);
-      defs.appendChild(marker);
-    }
-    const routes = this._messageMap?.routes || [];
-    const segments = routes.flatMap(route => {
-      const result: Array<{ from: MessageMapPoint; to: MessageMapPoint }> = [];
-      for (let i = 0; i + 1 < route.points.length; i += 1) {
-        const from = route.points[i];
-        const to = route.points[i + 1];
-        if (Number.isFinite(from.lat) && Number.isFinite(from.lon)
-          && Number.isFinite(to.lat) && Number.isFinite(to.lon)) {
-          result.push({ from, to });
-        }
-      }
-      return result;
-    });
-    const nodeMap = new Map<string, MessageMapPoint>();
-    routes.forEach(route => route.points.forEach(point => nodeMap.set(point.key, point)));
-
-    const lines = root.querySelectorAll('line.message-route');
-    lines.forEach((line, index) => {
-      const segment = segments[index];
-      if (segment) {
-        const from = this._mapPoint(segment.from.lat, segment.from.lon);
-        const to = this._mapPoint(segment.to.lat, segment.to.lon);
-        for (const [name, value] of [
-          ['x1', from.left], ['y1', from.top], ['x2', to.left], ['y2', to.top],
-        ] as const) {
-          if (Number.isFinite(value)) line.setAttribute(name, String(value));
-        }
-      }
-      line.setAttribute('id', 'message-route-line-' + index);
-      line.setAttribute('marker-end', 'url(#' + MapPage.ROUTE_ARROW_MARKER_ID + ')');
-    });
-
-    root.querySelectorAll<SVGCircleElement>('circle.message-node, circle.message-node-core').forEach(circle => {
-      const key = circle.getAttribute('data-route-node-key');
-      const point = key ? nodeMap.get(key) : undefined;
-      if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return;
-      const screen = this._mapPoint(point.lat, point.lon);
-      circle.setAttribute('cx', String(screen.left));
-      circle.setAttribute('cy', String(screen.top));
-      if (circle.classList.contains('message-node')) {
-        const sender = circle.classList.contains('sender');
-        circle.setAttribute('r', String(sender ? 10 : 8));
-      } else {
-        circle.setAttribute('r', '4');
-      }
-    });
-
-    root.querySelectorAll<SVGTextElement>('text.message-hop-label').forEach(label => {
-      const key = label.getAttribute('data-route-node-key');
-      const point = key ? nodeMap.get(key) : undefined;
-      if (!point || !Number.isFinite(point.lat) || !Number.isFinite(point.lon)) return;
-      const screen = this._mapPoint(point.lat, point.lon);
-      label.setAttribute('x', String(screen.left + 11));
-      label.setAttribute('y', String(screen.top - 9));
-    });
-
-    root.querySelectorAll('circle.message-route-packet').forEach((packet, index) => {
-      const motion = packet.querySelector('animateMotion');
-      if (!motion || motion.getAttribute('href') || motion.querySelector('mpath')) return;
-      const mpath = document.createElementNS('http://www.w3.org/2000/svg', 'mpath');
-      mpath.setAttribute('href', '#message-route-line-' + index);
-      motion.appendChild(mpath);
-    });
-  }
-
   private static readonly ROUTE_ARROW_MARKER_ID = 'message-route-arrow';
 
   private _messageBubblePoint(): { left: number; top: number } {
@@ -2372,36 +2167,6 @@ export class MapPage extends LitElement {
               .value=${this._deviceSearch}
               @input=${(e: Event) => { this._deviceSearch = (e.target as HTMLInputElement).value; }}>
           </div>
-          <div class="message-toggle">
-            <label>
-              <input
-                type="checkbox"
-                .checked=${this._showMessage}
-                @change=${(e: Event) => {
-                  this._showMessage = (e.target as HTMLInputElement).checked;
-                  if (!this._showMessage) {
-                    this._messageMap = null;
-                    this._selectedKey = null;
-                    this._fitAll();
-                  } else if (this._latestRadioRx) {
-                    const latestType = Number(this._latestRadioRx.payload_type);
-                    const latestTypeName = String(this._latestRadioRx.payload_typename || '').replace(/^EventType\./i, '').toUpperCase();
-                    const latestIsText = latestType === 2 || latestType === 5 || latestTypeName === 'TEXT_MSG' || latestTypeName === 'GRP_TXT';
-                    if (!latestIsText) {
-                      this._messageMap = null;
-                      if (this._graphEdges.length) void this._refreshGraphView('show latest radio event');
-                    } else {
-                      this._messageMap = this._buildPacketMap(this._latestRadioRx);
-                      this._fitMessage();
-                    }
-                  } else {
-                    this._fitMessage();
-                  }
-                }}>
-              <span>Show latest radio event</span>
-            </label>
-            <small>Hide nodes and show the latest message or Advert route</small>
-          </div>
           <div class="sort-select">
             <select
               aria-label="Sort devices"
@@ -2478,39 +2243,7 @@ export class MapPage extends LitElement {
                 ${[...new Map(this._graphEdges.flatMap(edge => [edge.from, edge.to]).map(point => [point.key, point])).values()].map(point => { const pos = this._mapPoint(point.lat, point.lon); return html`<g class="graph-node-group"><circle class="graph-node" data-graph-node=${point.key} cx=${pos.left} cy=${pos.top} r="7"></circle><text class="graph-node-label" data-graph-node-label=${point.key} x=${pos.left + 10} y=${pos.top - 10}>${point.key.slice(0, 4)}</text></g>`; })}
               </svg>
             ` : nothing}
-            ${this._showMessage
-              ? html`
-                  <svg
-                    class="message-route-layer"
-                    aria-hidden="true"
-                    width="100%"
-                    height="100%"
-                    viewBox=${`0 0 ${Math.max(1, this._mapSize.width)} ${Math.max(1, this._mapSize.height)}`}
-                    preserveAspectRatio="none"
-                  >
-                    <defs>
-                      <marker id="message-route-arrow" markerWidth="8" markerHeight="8" refX="7" refY="3.5" orient="auto" markerUnits="strokeWidth">
-                        <path d="M0,0 L0,7 L7,3.5 z" class="message-route-arrowhead"></path>
-                      </marker>
-                    </defs>
-                    ${this._routeOverlay()}
-                  </svg>
-                  ${this._messageMap ? (() => {
-                    const bubble = this._messageBubblePoint();
-                    const routeCount = this._messageMap.routes.length;
-                    const hopCount = Math.max(0, ...this._messageMap.routes.map(route => Math.max(0, route.points.length - 1)));
-                    return html`
-                      <div class="message-bubble ${routeCount ? "" : "no-route"}" style="left:${bubble.left}px;top:${bubble.top}px;">
-                        <div class="message-bubble-title">${this._messageMap.target}</div>
-                        <div class="message-bubble-sender">${this._messageMap.sender}</div>
-                        <div class="message-bubble-text">${this._messageMap.text}</div>
-                        <div class="message-bubble-route">${routeCount ? `${routeCount} route${routeCount === 1 ? "" : "s"} · ${hopCount} hop${hopCount === 1 ? "" : "s"}` : "Route is not available from known node coordinates"}</div>
-                      </div>
-                    `;
-                  })() : nothing}
-                `
-              : html`
-                  <div class="marker-layer">
+            <div class="marker-layer">
                     ${(() => {
                       const nodes = this._nodes;
                       return nodes.map(node => {
@@ -2547,8 +2280,6 @@ export class MapPage extends LitElement {
                       });
                     })()}
                   </div>
-                `
-            }
           </div>
 
         <div
