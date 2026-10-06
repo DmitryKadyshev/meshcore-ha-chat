@@ -289,6 +289,35 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     el.remove();
   });
 
+  it('builds a six-hop ACK route with three-byte path hashes in live mode', () => {
+    const prefixes = ['100001', '100002', '100003', '100004', '100005', '100006'];
+    el.contacts = prefixes.map((prefix, index) =>
+      makeContact(prefix, `Node ${prefix}`, 50 + index, 10 + index),
+    );
+
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        payload_type: 3,
+        payload_typename: 'ACK',
+        path_len: 6,
+        path_hash_size: 3,
+        path: prefixes.join(''),
+        path_nodes: prefixes,
+      }),
+    });
+
+    const edges = priv(el)._graphEdges;
+    expect(edges).toHaveLength(5);
+    expect(edges.map(edge => [edge.from.name, edge.to.name])).toEqual(
+      prefixes.slice(0, -1).map((prefix, index) => [
+        `Node ${prefix}`,
+        `Node ${prefixes[index + 1]}`,
+      ]),
+    );
+  });
+
   it('builds ordered directed edges for a non-text packet with a partial-GPS path', () => {
     fireRawEvent({
       event_type: 'RX_LOG_DATA',
@@ -1072,6 +1101,54 @@ describe('MeshCore map text message route (meshcore_message)', () => {
       }),
     });
     expect(priv(el)._selectedRadioRowId).toBeNull();
+  });
+
+  it('clicking an ACK RAW_EVENT row rebuilds its route when Show latest radio event is off', async () => {
+    el.contacts = [
+      makeContact('100001', 'Node 100001', 50.0, 10.0),
+      makeContact('100002', 'Node 100002', 50.5, 10.5),
+      makeContact('100003', 'Node 100003', 51.0, 11.0),
+      makeContact('100004', 'Node 100004', 51.5, 11.5),
+      makeContact('100005', 'Node 100005', 52.0, 12.0),
+      makeContact('100006', 'Node 100006', 52.5, 12.5),
+    ];
+    priv(el)._showMessage = false;
+
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        payload_type: 3,
+        payload_typename: 'ACK',
+        path_len: 6,
+        path_hash_size: 3,
+        path: '100001100002100003100004100005100006',
+        path_nodes: ['100001', '100002', '100003', '100004', '100005', '100006'],
+      }),
+    });
+
+    // Live mode stays unchanged: with the checkbox off, the packet itself
+    // does not activate the technical graph.
+    expect(priv(el)._graphEdges).toHaveLength(0);
+
+    const row = priv(el)._rawRadioRows[0];
+    await el.updateComplete;
+    (el.shadowRoot?.querySelector('.radio-table tbody tr') as HTMLElement)?.click();
+
+    expect(priv(el)._showMessage).toBe(false);
+    expect(priv(el)._selectedRadioRowId).toBe(row.id);
+    expect(priv(el)._graphEdges).toHaveLength(5);
+    expect(priv(el)._graphEdges.map(edge => [edge.from.name, edge.to.name])).toEqual([
+      ['Node 100001', 'Node 100002'],
+      ['Node 100002', 'Node 100003'],
+      ['Node 100003', 'Node 100004'],
+      ['Node 100004', 'Node 100005'],
+      ['Node 100005', 'Node 100006'],
+    ]);
+
+    await el.updateComplete;
+    expect(el.shadowRoot?.querySelector('.graph-layer')).toBeTruthy();
+    expect(el.shadowRoot?.querySelectorAll('.graph-edge')).toHaveLength(5);
   });
 
   it('rebuilds a TEXT_MSG route from the RAW_EVENT snapshot when the row is clicked', async () => {
