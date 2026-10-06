@@ -1083,9 +1083,56 @@ export class MapPage extends LitElement {
     const layer = root.querySelector('svg.graph-layer') as SVGSVGElement | null;
     if (!layer) return;
 
+    const svgNamespace = 'http://www.w3.org/2000/svg';
+
+    // The technical graph is rendered from the normal Lit html template.
+    // Some WebViews/bundles have produced HTML-namespace descendants inside
+    // that SVG. Browsers then keep the nodes in the DOM but do not paint
+    // their SVG geometry. Normalize every descendant before setting geometry.
+    const convertToSvg = (source: Element): Element => {
+      if (source.namespaceURI === svgNamespace) {
+        for (const child of Array.from(source.children)) convertToSvg(child);
+        return source;
+      }
+      const target = document.createElementNS(svgNamespace, source.tagName.toLowerCase());
+      Array.from(source.attributes).forEach(attribute => {
+        target.setAttribute(attribute.name, attribute.value);
+      });
+      while (source.firstChild) {
+        const child = source.firstChild;
+        if (child.nodeType === Node.ELEMENT_NODE) {
+          target.appendChild(convertToSvg(child as Element));
+        } else {
+          target.appendChild(child);
+        }
+      }
+      source.replaceWith(target);
+      return target;
+    };
+
+    for (const child of Array.from(layer.children)) convertToSvg(child);
+    layer.setAttribute('xmlns', svgNamespace);
+    layer.style.display = 'block';
+    layer.style.position = 'absolute';
+    layer.style.zIndex = '5';
+    layer.style.pointerEvents = 'none';
+
     const width = Math.max(1, this._mapSize.width);
     const height = Math.max(1, this._mapSize.height);
     layer.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    layer.setAttribute('width', String(width));
+    layer.setAttribute('height', String(height));
+
+    const defs = layer.querySelector('defs');
+    const marker = defs?.querySelector('#graph-arrow');
+    if (marker) {
+      marker.setAttribute('markerWidth', '8');
+      marker.setAttribute('markerHeight', '8');
+      marker.setAttribute('refX', '7');
+      marker.setAttribute('refY', '3.5');
+      marker.setAttribute('orient', 'auto');
+      marker.setAttribute('markerUnits', 'strokeWidth');
+    }
 
     const edgesById = new Map(this._graphEdges.map(edge => [edge.id, edge]));
     root.querySelectorAll<SVGLineElement>('svg.graph-layer line.graph-edge').forEach(line => {
@@ -1099,6 +1146,9 @@ export class MapPage extends LitElement {
       line.setAttribute('y1', String(from.top));
       line.setAttribute('x2', String(to.left));
       line.setAttribute('y2', String(to.top));
+      line.setAttribute('fill', 'none');
+      line.setAttribute('stroke', 'rgba(3,169,244,.9)');
+      line.setAttribute('stroke-linecap', 'round');
       line.setAttribute('marker-end', 'url(#graph-arrow)');
     });
 
@@ -1116,6 +1166,9 @@ export class MapPage extends LitElement {
       if (![pos.left, pos.top].every(Number.isFinite)) return;
       node.setAttribute('cx', String(pos.left));
       node.setAttribute('cy', String(pos.top));
+      node.setAttribute('fill', 'var(--card-background-color,#fff)');
+      node.setAttribute('stroke', 'rgba(3,169,244,.9)');
+      node.setAttribute('stroke-width', '2');
     });
 
     root.querySelectorAll<SVGTextElement>('svg.graph-layer text.graph-node-label').forEach(label => {
@@ -1138,6 +1191,9 @@ export class MapPage extends LitElement {
       if (![pos.left, pos.top].every(Number.isFinite)) return;
       packet.setAttribute('cx', String(pos.left));
       packet.setAttribute('cy', String(pos.top));
+      packet.setAttribute('fill', '#fff');
+      packet.setAttribute('stroke', 'rgba(3,169,244,.98)');
+      packet.setAttribute('stroke-width', '2');
     });
   }
 
