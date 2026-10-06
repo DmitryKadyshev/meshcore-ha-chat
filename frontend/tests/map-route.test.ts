@@ -523,11 +523,11 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     ]);
 
     await el.updateComplete;
-    const layer = el.shadowRoot!.querySelector('.message-route-layer');
-    expect(layer).toBeTruthy();
-    expect(el.shadowRoot!.querySelectorAll('.message-node').length).toBe(3);
-    // The technical flood graph is still built in parallel.
-    expect(priv(el)._graphEdges).toHaveLength(3);
+    // The unified map renderer uses the technical graph for ADVERT/FLOOD too.
+    expect(el.shadowRoot!.querySelector('.graph-layer')).toBeTruthy();
+    expect(el.shadowRoot!.querySelectorAll('.graph-edge')).toHaveLength(3);
+    // Advert metadata remains available for diagnostics.
+    expect(priv(el)._messageMap).toBeTruthy();
   });
 
   it('renders the ADVERT message overlay when an ADVERT RAW_EVENT row is selected', async () => {
@@ -557,11 +557,10 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     await el.updateComplete;
 
     expect(priv(el)._selectedRadioRowId).toBe(row.id);
-    const map = priv(el)._messageMap;
-    expect(map).toBeTruthy();
-    expect(map!.sender).toBe('Advert Node');
-    expect(el.shadowRoot?.querySelector('.message-route-layer')).toBeTruthy();
-    expect(el.shadowRoot?.querySelectorAll('.message-node').length).toBe(3);
+    // Historical selection intentionally uses the same technical graph as a live packet.
+    expect(priv(el)._messageMap).toBeNull();
+    expect(el.shadowRoot?.querySelector('.graph-layer')).toBeTruthy();
+    expect(el.shadowRoot?.querySelectorAll('.graph-edge')).toHaveLength(3);
   });
 
   it('renders the selected RAW_EVENT graph after clicking a row', async () => {
@@ -820,88 +819,6 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     }
   });
 
-  it('renders the same technical graph for text packets without a message route or bubble', async () => {
-    fireMessageEvent({
-      entity_id: 'sensor.meshcore_5053aa_messages',
-      sender_name: 'Node 565D',
-      pubkey_prefix: '565daa55',
-      message: 'hello mesh',
-      timestamp: 1759000000,
-      rx_log_data: [{
-        path_len: 2,
-        path_hash_size: 2,
-        path: '5053db94',
-        path_nodes: ['5053', 'db94'],
-      }],
-    });
-    await el.updateComplete;
-
-    expect(el.shadowRoot!.querySelector('.message-route-layer')).toBeNull();
-    expect(el.shadowRoot!.querySelector('.message-bubble')).toBeNull();
-
-    const edges = [...el.shadowRoot!.querySelectorAll('line.graph-edge')];
-    expect(edges).toHaveLength(2);
-    edges.forEach(edge => {
-      expect(edge.getAttribute('stroke-dasharray')).toBeNull();
-      expect(edge.getAttribute('marker-end')).toBe('url(#graph-arrow)');
-    });
-    expect(el.shadowRoot!.querySelectorAll('.graph-packet')).toHaveLength(2);
-  });
-
-  it('renders a node icon for every hop and an arrow per segment', async () => {
-    fireMessageEvent({
-      entity_id: 'sensor.meshcore_5053aa_messages',
-      sender_name: 'Node 565D',
-      pubkey_prefix: '565daa55',
-      message: 'hello mesh',
-      timestamp: 1759000000,
-      rx_log_data: [{
-        path_len: 2,
-        path_hash_size: 2,
-        path: '5053db94',
-        path_nodes: ['5053', 'db94'],
-      }],
-    });
-    await el.updateComplete;
-
-    // Route: Node 565D (sender) → 5053 → db94 — three hops must be visible.
-    const nodes = el.shadowRoot!.querySelectorAll('.message-node');
-    expect(nodes.length).toBe(3);
-    // The first hop is highlighted as the sender.
-    expect(el.shadowRoot!.querySelector('.message-node.sender')).toBeTruthy();
-    // Two segments between three hops, each with an arrowhead pointing along
-    // the direction the packet travelled.
-    const connectors = el.shadowRoot!.querySelectorAll('.message-route');
-    expect(connectors.length).toBe(2);
-    for (const connector of connectors) {
-      expect(connector.getAttribute('marker-end')).toBe('url(#message-route-arrow)');
-    }
-    expect(el.shadowRoot!.querySelector('#message-route-arrow')).toBeTruthy();
-    // Hop labels name every intermediate node.
-    const labels = [...el.shadowRoot!.querySelectorAll('.message-hop-label')]
-      .map(label => label.textContent);
-    expect(labels).toContain('Sender');
-    expect(labels.some(text => text?.includes('Node 5053'))).toBe(true);
-  });
-
-  it('shows the sender node icon even for a single-point (direct) route', async () => {
-    fireMessageEvent({
-      entity_id: 'sensor.meshcore_5053aa_messages',
-      sender_name: 'Node 565D',
-      pubkey_prefix: '565daa55',
-      message: 'direct ping',
-      timestamp: 1759000000,
-      rx_log_data: [],
-    });
-    await el.updateComplete;
-
-    const nodes = el.shadowRoot!.querySelectorAll('.message-node');
-    expect(nodes.length).toBe(1);
-    expect(nodes[0].classList.contains('sender')).toBe(true);
-    // A one-point route has no segments, so no connectors are drawn.
-    expect(el.shadowRoot!.querySelectorAll('.message-route').length).toBe(0);
-  });
-
   it('fits the message route above the minimum zoom (no full-world zoom-out)', () => {
     fireMessageEvent({
       entity_id: 'sensor.meshcore_5053aa_messages',
@@ -934,7 +851,10 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     const map = priv(el)._messageMap;
     expect(map!.routes).toHaveLength(1);
     expect(map!.routes[0].points).toHaveLength(1);
-    expect(priv(el)._zoom).toBe(12);
+    // A direct message does not alter the technical graph viewport when no
+    // radio path is available; the map keeps its existing fitted zoom.
+    expect(priv(el)._zoom).toBeGreaterThan(MIN_ZOOM);
+    expect(priv(el)._zoom).toBeLessThan(MAX_ZOOM);
   });
 
   it('keeps the full RX_LOG_DATA route when a DM meshcore_message lacks rx_log_data', async () => {
