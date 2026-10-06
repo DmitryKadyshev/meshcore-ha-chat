@@ -72,7 +72,6 @@ export class MapPage extends LitElement {
   @state() private _deviceSearch = '';
   @state() private _deviceSort: 'name' | 'activity' = 'name';
   @state() private _activityNow = Date.now();
-  @state() private _showMessage = false;
   @state() private _messageMap: MessageMapState | null = null;
   @state() private _rawRadioRows: RawRadioRow[] = [];
   @state() private _selectedRadioRowId: number | null = null;
@@ -227,23 +226,6 @@ export class MapPage extends LitElement {
       font: inherit;
       font-size: 12px;
     }
-
-    .message-toggle {
-      padding: 9px 10px;
-      border-bottom: 1px solid var(--divider-color, #e0e0e0);
-      flex-shrink: 0;
-    }
-    .message-toggle label {
-      display: flex;
-      align-items: center;
-      gap: 9px;
-      color: var(--primary-text-color);
-      font-size: 13px;
-      cursor: pointer;
-      user-select: none;
-    }
-    .message-toggle input { width: 17px; height: 17px; margin: 0; accent-color: var(--primary-color, #03a9f4); }
-    .message-toggle small { display: block; margin: 3px 0 0 26px; color: var(--secondary-text-color); font-size: 10px; }
     .map-area { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
     .radio-table { flex: 0 0 25%; min-height: 120px; overflow: auto; border-top: 1px solid var(--divider-color, #e0e0e0); background: var(--card-background-color, #fff); }
     .radio-table table { width: 100%; border-collapse: collapse; font-size: 11px; white-space: nowrap; }
@@ -578,7 +560,6 @@ export class MapPage extends LitElement {
       this._mapSize = { width, height };
       if (this._graphEdges.length) {
         this._fitGraph();
-      } else if (this._showMessage && this._messageMap) {
       } else {
         this._fitAll();
       }
@@ -1181,7 +1162,6 @@ export class MapPage extends LitElement {
     void subscribe('meshcore_message', data => {
       this._debugRadioEvent('MESSAGE received', data, {
         belongsToDevice: this._eventBelongsToDevice(data),
-        showMessage: this._showMessage,
         rxLogData: data.rx_log_data,
       });
       if (!this._eventBelongsToDevice(data)) return;
@@ -1232,9 +1212,8 @@ export class MapPage extends LitElement {
     void subscribe('meshcore_delivery_update', data => {
       this._debugRadioEvent('DELIVERY_UPDATE received', data, {
         belongsToDevice: this._eventBelongsToDevice(data),
-        showMessage: this._showMessage,
-      });
-      if (!this._showMessage || !this._eventBelongsToDevice(data)) return;
+        });
+      if (!this._eventBelongsToDevice(data)) return;
       const current = this._messageMap;
       const text = String(data.message || '');
       const sender = String(data.sender_name || '');
@@ -1751,43 +1730,6 @@ export class MapPage extends LitElement {
     };
   }
 
-  private _fitMessage() {
-    if (!this._showMessage || !this._messageMap) return;
-    // BUG-9: only finite coordinates may enter the fit bounds.
-    const points = this._messageMap.routes
-      .flatMap(route => route.points)
-      .filter(point => Number.isFinite(point.lat) && Number.isFinite(point.lon));
-    // If the route cannot be resolved to known node coordinates, keep the
-    // map exactly where the user currently has it. The message bubble is
-    // rendered independently of map coordinates in that case.
-    if (!points.length) return;
-    const minLat = Math.min(...points.map(point => point.lat));
-    const maxLat = Math.max(...points.map(point => point.lat));
-    const minLon = Math.min(...points.map(point => point.lon));
-    const maxLon = Math.max(...points.map(point => point.lon));
-    this._center = [(minLat + maxLat) / 2, (minLon + maxLon) / 2];
-    if (points.length === 1 || (minLat === maxLat && minLon === maxLon)) { this._zoom = 12; return; }
-    const width = Math.max(this._mapSize.width - 120, 320);
-    const height = Math.max(this._mapSize.height - 120, 240);
-    // Highest zoom level that still keeps the whole route inside the
-    // viewport, plus one padding level — never below MIN_ZOOM.
-    let best = MIN_ZOOM;
-    for (let z = MAX_ZOOM; z >= MIN_ZOOM; z--) {
-      const [x1, y1] = project(minLat, minLon, z); const [x2, y2] = project(maxLat, maxLon, z);
-      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { best = z; break; }
-    }
-    // Leave one additional zoom level of margin so route nodes, arrowheads, labels and animated packets are not clipped at the viewport edges.
-    this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best - 1));
-  }
-
-  /**
-   * Route nodes and connector arrows for the latest message/advert.
-   *
-   * Every hop of every route gets a visible node icon — including a
-   * single-point route (a direct message with no repeater path) — and the
-   * connectors are drawn hop-to-hop so each segment carries an arrowhead
-   * pointing along the direction the packet travelled.
-   */
   private _routeOverlay() {
     const routes = this._messageMap?.routes || [];
     const nodeMap = new Map<string, { point: MessageMapPoint; hop: number; sender: boolean }>();
@@ -2291,13 +2233,9 @@ export class MapPage extends LitElement {
             <button type="button" title="Fit all devices" @click=${() => { this._selectedKey = null; this._fitAll(); }}>⌂</button>
           </div>
 
-          ${this._showMessage
-            ? (!this._messageMap
-              ? html`<div class="empty-map">Waiting for a MeshCore message…</div>`
-              : nothing)
-            : (this._nodes.length
-              ? nothing
-              : html`<div class="empty-map">No devices with coordinates are available.</div>`)}
+          ${this._nodes.length
+            ? nothing
+            : html`<div class="empty-map">No devices with coordinates are available.</div>`}
 
           <div class="attribution">© OpenStreetMap contributors</div>
         </main>
