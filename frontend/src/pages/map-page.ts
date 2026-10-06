@@ -1,4 +1,4 @@
-import { LitElement, html, svg, css, nothing, type PropertyValues } from 'lit';
+import { LitElement, html, css, nothing, type PropertyValues } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { Contact, HomeAssistant, PanelConfig } from '../types';
 import { hasCoordinates as hasRadioCoordinates, nodeCoordinates, pathHashes as parsePathHashes, payloadTypeName as radioPayloadTypeName } from '../meshcore-radio';
@@ -1722,16 +1722,6 @@ export class MapPage extends LitElement {
       timestamp: data.timestamp ? String(data.timestamp) : undefined,
       routes,
     };
-  }
-
-  private static readonly ROUTE_ARROW_MARKER_ID = 'message-route-arrow';
-
-  private _messageBubblePoint(): { left: number; top: number } {
-    const point = this._messageMap?.routes[0]?.points[0];
-    if (point) return this._mapPoint(point.lat, point.lon);
-    // No route coordinates: anchor the message to the current map viewport,
-    // centered horizontally near its upper edge rather than using 0,0.
-    return { left: this._mapSize.width / 2, top: 24 };
   }
   private _fitAll() {
     const nodes = this._nodes;
