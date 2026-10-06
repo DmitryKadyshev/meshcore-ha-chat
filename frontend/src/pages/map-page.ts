@@ -840,7 +840,7 @@ export class MapPage extends LitElement {
       // Keep the technical flood graph in sync with the selected historical
       // packet, but use the message map as the authoritative user-facing
       // route overlay, exactly like the live RX_LOG_DATA path.
-      if (this._showMessage) this._recordFloodGraph(row.eventData, row.rxData);
+      this._recordFloodGraph(row.eventData, row.rxData);
 
       // payload_type=4 is never a text packet, so the old `&& isTextPacket`
       // guard made this advert branch unreachable — selecting an ADVERT row
