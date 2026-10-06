@@ -803,7 +803,7 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     }
   });
 
-  it('renders the message route polyline and keeps the text accessible', async () => {
+  it('renders the same technical graph for text packets without a message route or bubble', async () => {
     fireMessageEvent({
       entity_id: 'sensor.meshcore_5053aa_messages',
       sender_name: 'Node 565D',
@@ -819,18 +819,16 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     });
     await el.updateComplete;
 
-    const polyline = el.shadowRoot!.querySelector('.message-route');
-    expect(polyline).toBeTruthy();
-    const pointsAttr = (polyline!.getAttribute('points') || [
-      polyline!.getAttribute('x1'), polyline!.getAttribute('y1'),
-      polyline!.getAttribute('x2'), polyline!.getAttribute('y2'),
-    ].join(','));
-    expect(pointsAttr).not.toMatch(/null/);
-    // No degenerate NaN screen coordinates in the rendered route connector.
-    expect(pointsAttr).not.toMatch(/NaN/);
+    expect(el.shadowRoot!.querySelector('.message-route-layer')).toBeNull();
+    expect(el.shadowRoot!.querySelector('.message-bubble')).toBeNull();
 
-    const bubble = el.shadowRoot!.querySelector('.message-bubble-text');
-    expect(bubble?.textContent).toContain('hello mesh');
+    const edges = [...el.shadowRoot!.querySelectorAll('line.graph-edge')];
+    expect(edges).toHaveLength(2);
+    edges.forEach(edge => {
+      expect(edge.getAttribute('stroke-dasharray')).toBeNull();
+      expect(edge.getAttribute('marker-end')).toBe('url(#graph-arrow)');
+    });
+    expect(el.shadowRoot!.querySelectorAll('.graph-packet')).toHaveLength(2);
   });
 
   it('renders a node icon for every hop and an arrow per segment', async () => {
@@ -867,89 +865,6 @@ describe('MeshCore map text message route (meshcore_message)', () => {
       .map(label => label.textContent);
     expect(labels).toContain('Sender');
     expect(labels.some(text => text?.includes('Node 5053'))).toBe(true);
-  });
-
-  it('renders route geometry in the SVG namespace with real coordinates', async () => {
-    fireMessageEvent({
-      entity_id: 'sensor.meshcore_5053aa_messages',
-      sender_name: 'Node 565D',
-      pubkey_prefix: '565daa55',
-      message: 'hello mesh',
-      timestamp: 1759000000,
-      rx_log_data: [{
-        path_len: 2,
-        path_hash_size: 2,
-        path: '5053db94',
-        path_nodes: ['5053', 'db94'],
-      }],
-    });
-    await el.updateComplete;
-
-    const SVG_NS = 'http://www.w3.org/2000/svg';
-    const connectors = [...el.shadowRoot!.querySelectorAll('line.message-route')];
-    expect(connectors).toHaveLength(2);
-    connectors.forEach(line => {
-      expect(line.namespaceURI).toBe(SVG_NS);
-      const values = ['x1', 'y1', 'x2', 'y2'].map(name => Number(line.getAttribute(name)));
-      values.forEach(value => expect(Number.isFinite(value)).toBe(true));
-      expect(values[0] !== values[2] || values[1] !== values[3]).toBe(true);
-    });
-
-    const nodes = [...el.shadowRoot!.querySelectorAll('circle.message-node')];
-    expect(nodes).toHaveLength(3);
-    nodes.forEach(node => {
-      expect(node.namespaceURI).toBe(SVG_NS);
-      expect(Number.isFinite(Number(node.getAttribute('cx')))).toBe(true);
-      expect(Number.isFinite(Number(node.getAttribute('cy')))).toBe(true);
-      expect(Number(node.getAttribute('r'))).toBeGreaterThan(0);
-    });
-
-    const labels = [...el.shadowRoot!.querySelectorAll('text.message-hop-label')];
-    expect(labels).toHaveLength(3);
-    labels.forEach(label => {
-      expect(label.namespaceURI).toBe(SVG_NS);
-      expect(Number.isFinite(Number(label.getAttribute('x')))).toBe(true);
-      expect(Number.isFinite(Number(label.getAttribute('y')))).toBe(true);
-    });
-  });
-
-  it('wires arrowhead markers and packet motion paths imperatively after render', async () => {
-    // Regression for the shipped-bug where nodes/arrows stayed hidden: the
-    // paint-server references (marker url(#id), <mpath href>) must be applied
-    // via setAttribute() in updated(), never left solely to Lit template
-    // bindings that can be lost through bundle transpilation.
-    fireMessageEvent({
-      entity_id: 'sensor.meshcore_5053aa_messages',
-      sender_name: 'Node 565D',
-      pubkey_prefix: '565daa55',
-      message: 'hello mesh',
-      timestamp: 1759000000,
-      rx_log_data: [{
-        path_len: 2,
-        path_hash_size: 2,
-        path: '5053db94',
-        path_nodes: ['5053', 'db94'],
-      }],
-    });
-    await el.updateComplete;
-
-    const connectors = [...el.shadowRoot!.querySelectorAll('line.message-route')];
-    expect(connectors.length).toBe(2);
-    connectors.forEach((line, index) => {
-      expect(line.id).toBe(`message-route-line-${index}`);
-      expect(line.getAttribute('marker-end')).toBe('url(#message-route-arrow)');
-    });
-    // The marker def itself is created imperatively inside the layer's defs.
-    const marker = el.shadowRoot!.querySelector('defs #message-route-arrow');
-    expect(marker).toBeTruthy();
-    // Each travelling packet animates along its connector line.
-    const packets = [...el.shadowRoot!.querySelectorAll('circle.message-route-packet')];
-    expect(packets.length).toBe(2);
-    packets.forEach((packet, index) => {
-      const mpath = packet.querySelector('mpath');
-      expect(mpath).toBeTruthy();
-      expect(mpath!.getAttribute('href')).toBe(`#message-route-line-${index}`);
-    });
   });
 
   it('shows the sender node icon even for a single-point (direct) route', async () => {
@@ -1103,6 +1018,45 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     expect(priv(el)._selectedRadioRowId).toBeNull();
   });
 
+  it('uses the same solid animated graph style for live and historical packets', async () => {
+    el.contacts = [
+      makeContact('100001', 'Node 100001', 50.0, 10.0),
+      makeContact('100002', 'Node 100002', 50.5, 10.5),
+      makeContact('100003', 'Node 100003', 51.0, 11.0),
+    ];
+
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        payload_type: 3,
+        payload_typename: 'ACK',
+        path_len: 3,
+        path_hash_size: 3,
+        path: '100001100002100003',
+        path_nodes: ['100001', '100002', '100003'],
+      }),
+    });
+    await el.updateComplete;
+
+    const liveEdges = [...el.shadowRoot!.querySelectorAll('line.graph-edge')];
+    expect(liveEdges).toHaveLength(2);
+    expect(liveEdges.every(edge => edge.getAttribute('stroke-dasharray') === null)).toBe(true);
+    expect(el.shadowRoot!.querySelectorAll('.graph-packet')).toHaveLength(2);
+
+    const row = priv(el)._rawRadioRows[0];
+    (el.shadowRoot!.querySelector('.radio-table tbody tr') as HTMLElement)?.click();
+    await el.updateComplete;
+
+    const historyEdges = [...el.shadowRoot!.querySelectorAll('line.graph-edge')];
+    expect(historyEdges).toHaveLength(2);
+    expect(historyEdges.every(edge => edge.getAttribute('stroke-dasharray') === null)).toBe(true);
+    expect(el.shadowRoot!.querySelectorAll('.graph-packet')).toHaveLength(2);
+    expect(priv(el)._selectedRadioRowId).toBe(row.id);
+    expect(el.shadowRoot!.querySelector('.message-bubble')).toBeNull();
+    expect(el.shadowRoot!.querySelector('.message-route-layer')).toBeNull();
+  });
+
   it('clicking an ACK RAW_EVENT row rebuilds its route when Show latest radio event is off', async () => {
     el.contacts = [
       makeContact('100001', 'Node 100001', 50.0, 10.0),
@@ -1127,15 +1081,13 @@ describe('MeshCore map text message route (meshcore_message)', () => {
       }),
     });
 
-    // Live mode stays unchanged: with the checkbox off, the packet itself
-    // does not activate the technical graph.
-    expect(priv(el)._graphEdges).toHaveLength(0);
+    // Live packets always use the same technical graph, independent of the old message toggle.
+    expect(priv(el)._graphEdges).toHaveLength(5);
 
     const row = priv(el)._rawRadioRows[0];
     await el.updateComplete;
     (el.shadowRoot?.querySelector('.radio-table tbody tr') as HTMLElement)?.click();
 
-    expect(priv(el)._showMessage).toBe(false);
     expect(priv(el)._selectedRadioRowId).toBe(row.id);
     expect(priv(el)._graphEdges).toHaveLength(5);
     expect(priv(el)._graphEdges.map(edge => [edge.from.name, edge.to.name])).toEqual([
