@@ -829,7 +829,7 @@ export class MapPage extends LitElement {
 
       const payloadType = Number(row.rxData.payload_type);
       const payloadTypeName = String(row.rxData.payload_typename || '')
-        .replace(/^EventType\\./i, '')
+        .replace(/^EventType\./i, '')
         .toUpperCase();
       const isTextPacket =
         payloadType === 2 ||
