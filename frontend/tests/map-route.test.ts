@@ -43,6 +43,7 @@ interface PrivateMapPage {
   _pathHashes(rx: Record<string, unknown>): string[];
   _resolvePathPoints(hashes: string[]): MessageMapPoint[];
   _recordFloodGraph(data: Record<string, unknown>, rx?: Record<string, unknown>): void;
+  _buildGraphEdges(hashes: string[], snrValue?: string | number, rssiValue?: string | number, extraPoint?: MessageMapPoint): GraphEdge[];
   _buildMessageMap(data: Record<string, unknown>): MessageMapState;
   _buildPacketMap(data: Record<string, unknown>): MessageMapState;
   _fitMessage(): void;
@@ -782,7 +783,6 @@ describe('MeshCore map text message route (meshcore_message)', () => {
   beforeEach(async () => {
     capturedHandlers = new Map();
     el = await mountMapPage();
-    priv(el)._showMessage = true;
     await el.updateComplete;
   });
 
