@@ -972,17 +972,23 @@ export class MapPage extends LitElement {
       this._zoom = 12;
       return;
     }
-    const width = Math.max(this._mapSize.width - 140, 320);
-    const height = Math.max(this._mapSize.height - 140, 240);
-    // Highest zoom level that still keeps the whole route inside the
-    // viewport, plus one padding level — never below MIN_ZOOM.
+    // Fit the route against the actual drawable area with a modest pixel margin.
+    // The previous implementation reserved 140px and then dropped one more
+    // zoom level, which made short/medium routes appear unnecessarily tiny.
+    const width = Math.max(this._mapSize.width - 80, 320);
+    const height = Math.max(this._mapSize.height - 80, 240);
     let best = MIN_ZOOM;
     for (let z = MAX_ZOOM; z >= MIN_ZOOM; z -= 1) {
-      const [x1, y1] = project(minLat, minLon, z); const [x2, y2] = project(maxLat, maxLon, z);
-      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) { best = z; break; }
+      const [x1, y1] = project(minLat, minLon, z);
+      const [x2, y2] = project(maxLat, maxLon, z);
+      if (Math.abs(x2 - x1) <= width && Math.abs(y2 - y1) <= height) {
+        best = z;
+        break;
+      }
     }
-    // Leave one additional zoom level of margin so route nodes, arrowheads, labels and animated packets are not clipped at the viewport edges.
-    this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best - 1));
+    // Use the highest level that fits. The 40px border on each side is
+    // enough for arrowheads/labels while keeping the route visually large.
+    this._zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, best));
   }
 
   /**
