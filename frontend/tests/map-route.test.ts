@@ -393,6 +393,43 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     ]);
   });
 
+  it('uses ADVERT coordinates as an external interpolation anchor when path contacts are missing', () => {
+    // Only the last forwarding hop is known locally. The advertised node is
+    // outside path_nodes, so _buildGraphEdges must pass it into
+    // _resolvePathPoints as an anchor before unresolved hops are filtered.
+    const advert = makeContact('abcd', 'Advert Node', 53.0, 13.0);
+    el.contacts = [NODE_565D];
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        payload_type: 4,
+        payload_typename: 'ADVERT',
+        route_typename: 'FLOOD',
+        path_len: 3,
+        path_hash_size: 2,
+        path: '5053db94565d',
+        path_nodes: ['5053', 'db94', '565d'],
+        adv_key: advert.public_key,
+        adv_name: advert.adv_name,
+        adv_lat: advert.adv_lat,
+        adv_lon: advert.adv_lon,
+      }),
+    });
+
+    const edges = priv(el)._graphEdges;
+    expect(edges).toHaveLength(3);
+    expect(edges.map(edge => [edge.from.name, edge.to.name])).toEqual([
+      ['5053', 'db94'],
+      ['db94', 'Node 565D'],
+      ['Node 565D', 'Advert Node'],
+    ]);
+    expect(edges.every(edge =>
+      Number.isFinite(edge.from.lat) && Number.isFinite(edge.from.lon)
+      && Number.isFinite(edge.to.lat) && Number.isFinite(edge.to.lon),
+    )).toBe(true);
+  });
+
   it('renders the selected RAW_EVENT graph after clicking a row', async () => {
     const advert = makeContact('abcd', 'Advert Node', 53.0, 13.0);
     el.contacts = [...CONTACTS, advert];
