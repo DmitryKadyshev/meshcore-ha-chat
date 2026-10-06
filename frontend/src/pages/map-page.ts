@@ -842,7 +842,10 @@ export class MapPage extends LitElement {
       // route overlay, exactly like the live RX_LOG_DATA path.
       if (this._showMessage) this._recordFloodGraph(row.eventData, row.rxData);
 
-      if (payloadType === 4 && isTextPacket) {
+      // payload_type=4 is never a text packet, so the old `&& isTextPacket`
+      // guard made this advert branch unreachable — selecting an ADVERT row
+      // only rebuilt the technical graph. Render the advert overlay instead.
+      if (payloadType === 4) {
         const advertMap = this._buildAdvertMap(row.rxData);
         this._messageMap = advertMap;
         if (!advertMap.routes.length) this._messageMap = null;
@@ -1242,10 +1245,34 @@ export class MapPage extends LitElement {
       if (!this._showMessage || !this._eventBelongsToDevice(data)) return;
       const messageMap = this._buildMessageMap(data);
       // meshcore_message can arrive immediately after RX_LOG_DATA for the
-      // same packet. Keep the richer raw-radio path instead of replacing it
-      // with a message map that lost the path metadata.
-      if (!this._messageMap?.routes.length || messageMap.routes.length >= this._messageMap.routes.length) {
+      // same packet. RX_LOG_DATA carries the full radio path while the
+      // message event carries the readable text — and for DM packets the
+      // message event has no rx_log_data at all (only hop_count/snr), so
+      // its map degenerates to a single sender point. Compare route
+      // *richness* (total resolved points), not the route count: both maps
+      // usually contain exactly one route, and the old route-count check
+      // replaced the full RX_LOG_DATA route with one sender point — which
+      // broke the map route for every payload type that emits
+      // meshcore_message (only GRP_TXT, which never emits the follow-up
+      // event, kept its route).
+      const currentPoints = this._messageMap
+        ?.routes.reduce((sum, route) => sum + route.points.length, 0) ?? 0;
+      const incomingPoints = messageMap.routes.reduce((sum, route) => sum + route.points.length, 0);
+      if (!currentPoints || incomingPoints >= currentPoints) {
         this._messageMap = messageMap;
+      } else {
+        // Keep the richer RX_LOG_DATA route and adopt the readable message
+        // metadata so the bubble shows the real text/sender/channel.
+        const existing = this._messageMap!;
+        this._messageMap = {
+          ...existing,
+          sender: messageMap.sender,
+          target: messageMap.target,
+          text: messageMap.text,
+          channel: messageMap.channel,
+          pubkeyPrefix: messageMap.pubkeyPrefix,
+          timestamp: messageMap.timestamp,
+        };
       }
       this._fitMessage();
       // meshcore_message normally arrives after RX_LOG_DATA. Its fitMessage()
@@ -1355,12 +1382,11 @@ export class MapPage extends LitElement {
           this._liveLastAdvert.set(advertKey.substring(0, 12), receivedMs);
         }
 
-        if (!isTextPacket) {
-          this._messageMap = null;
-          if (this._graphEdges.length) void this._refreshGraphView('ADVERT');
-          return;
-        }
-
+        // Adverts get a dedicated message overlay anchored on the advertised
+        // node, not only the technical flood graph. The previous guard
+        // required isTextPacket (payload types 2/5), which is never true for
+        // payload_type=4 — the advert branch was dead code and only the
+        // technical graph was ever rendered.
         const advertMap = this._buildAdvertMap({
           ...rx,
           timestamp: data.timestamp,
@@ -1368,8 +1394,12 @@ export class MapPage extends LitElement {
         this._messageMap = advertMap;
         // An advert without resolvable coordinates must not keep showing a
         // stale message route from a previous packet.
-        if (!advertMap.routes.length) this._messageMap = null;
-        else this._fitMessage();
+        if (!advertMap.routes.length) {
+          this._messageMap = null;
+          if (this._graphEdges.length) void this._refreshGraphView('ADVERT');
+        } else {
+          this._fitMessage();
+        }
 
         this._debugRadioEvent('ADVERT map built', data, {
           payloadType,

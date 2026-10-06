@@ -445,6 +445,78 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
     )).toBe(true);
   });
 
+  it('renders the ADVERT message overlay for a live payload_type=4 packet', async () => {
+    const advert = makeContact('abcd', 'Advert Node', 53.0, 13.0);
+    el.contacts = [...CONTACTS, advert];
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        payload_type: 4,
+        payload_typename: 'ADVERT',
+        route_typename: 'FLOOD',
+        path_len: 3,
+        path_hash_size: 2,
+        path: '5053db94565d',
+        path_nodes: ['5053', 'db94', '565d'],
+        adv_key: advert.public_key,
+        adv_name: advert.adv_name,
+        adv_lat: advert.adv_lat,
+        adv_lon: advert.adv_lon,
+      }),
+    });
+
+    const map = priv(el)._messageMap;
+    expect(map).toBeTruthy();
+    expect(map!.sender).toBe('Advert Node');
+    expect(map!.routes).toHaveLength(1);
+    // Advertised node + located forwarding hops (db94 has no GPS).
+    expect(map!.routes[0].points.map(p => p.name)).toEqual([
+      'Advert Node', 'Node 5053', 'Node 565D',
+    ]);
+
+    await el.updateComplete;
+    const layer = el.shadowRoot!.querySelector('.message-route-layer');
+    expect(layer).toBeTruthy();
+    expect(el.shadowRoot!.querySelectorAll('.message-node').length).toBe(3);
+    // The technical flood graph is still built in parallel.
+    expect(priv(el)._graphEdges).toHaveLength(3);
+  });
+
+  it('renders the ADVERT message overlay when an ADVERT RAW_EVENT row is selected', async () => {
+    const advert = makeContact('abcd', 'Advert Node', 53.0, 13.0);
+    el.contacts = [...CONTACTS, advert];
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({
+        payload_type: 4,
+        payload_typename: 'ADVERT',
+        route_typename: 'FLOOD',
+        path_len: 3,
+        path_hash_size: 2,
+        path: '5053db94565d',
+        path_nodes: ['5053', 'db94', '565d'],
+        adv_key: advert.public_key,
+        adv_name: advert.adv_name,
+        adv_lat: advert.adv_lat,
+        adv_lon: advert.adv_lon,
+      }),
+    });
+
+    const row = priv(el)._rawRadioRows[0];
+    await el.updateComplete;
+    (el.shadowRoot?.querySelector('.radio-table tbody tr') as HTMLElement)?.click();
+    await el.updateComplete;
+
+    expect(priv(el)._selectedRadioRowId).toBe(row.id);
+    const map = priv(el)._messageMap;
+    expect(map).toBeTruthy();
+    expect(map!.sender).toBe('Advert Node');
+    expect(el.shadowRoot?.querySelector('.message-route-layer')).toBeTruthy();
+    expect(el.shadowRoot?.querySelectorAll('.message-node').length).toBe(3);
+  });
+
   it('renders the selected RAW_EVENT graph after clicking a row', async () => {
     const advert = makeContact('abcd', 'Advert Node', 53.0, 13.0);
     el.contacts = [...CONTACTS, advert];
@@ -902,6 +974,43 @@ describe('MeshCore map text message route (meshcore_message)', () => {
     expect(map!.routes).toHaveLength(1);
     expect(map!.routes[0].points).toHaveLength(1);
     expect(priv(el)._zoom).toBe(12);
+  });
+
+  it('keeps the full RX_LOG_DATA route when a DM meshcore_message lacks rx_log_data', async () => {
+    // A DM TEXT_MSG emits RX_LOG_DATA (with the full path) followed by
+    // meshcore_message that carries hop_count/snr but NO rx_log_data —
+    // its map degenerates to a single sender point. The rich RX_LOG_DATA
+    // route must survive. Regression: only GRP_TXT, which never emits
+    // meshcore_message, used to keep its route on the map.
+    fireRawEvent({
+      event_type: 'RX_LOG_DATA',
+      timestamp: 1759000000,
+      payload: rxLogPayload({ payload_type: 2, payload_typename: 'TEXT_MSG' }),
+    });
+    expect(priv(el)._messageMap!.routes[0].points.map(p => p.name)).toEqual([
+      'Node 5053', 'Node DB94', 'Node 565D',
+    ]);
+
+    fireMessageEvent({
+      entity_id: 'sensor.meshcore_5053aa_messages',
+      sender_name: 'Node 565D',
+      pubkey_prefix: '565daa55',
+      message: 'hello mesh',
+      timestamp: 1759000000,
+      // Realistic DM shape: rx_log_data is absent (top-level hop_count/snr).
+    });
+
+    const map = priv(el)._messageMap;
+    expect(map).toBeTruthy();
+    expect(map!.routes).toHaveLength(1);
+    // The three-hop route survives instead of collapsing to the sender.
+    expect(map!.routes[0].points.map(p => p.name)).toEqual([
+      'Node 5053', 'Node DB94', 'Node 565D',
+    ]);
+    // The readable message text is adopted onto the preserved route.
+    expect(map!.text).toBe('hello mesh');
+    // The technical flood graph is unaffected.
+    expect(priv(el)._graphEdges).toHaveLength(2);
   });
 
   it('shows the "route unavailable" bubble instead of zooming out when nothing resolves', () => {
