@@ -988,7 +988,7 @@ export class MapPage extends LitElement {
   /**
    * Lit reliably creates the graph SVG, but some browsers can retain stale
    * SVG geometry after a map viewport update. Re-apply the graph geometry
-   * directly to the rendered SVG, just like the message-route overlay.
+   * directly to the rendered SVG, using the same route layer.
    */
   private _wireGraphLayer() {
     const root = this.shadowRoot;
@@ -1330,12 +1330,8 @@ export class MapPage extends LitElement {
         ...rx,
         timestamp: data.timestamp,
       });
-      // Text packets (TEXT_MSG / GRP_TXT) always build a message map so the
-      // text stays accessible even when no hop resolves to coordinates —
-      // _fitMessage() keeps the viewport untouched in that case and the
-      // bubble is anchored to the current view instead of zooming out.
-      // For non-text packets an unresolvable route must not keep a stale
-      // bubble from a previous packet.
+      // Keep message metadata for diagnostics/table updates; the map itself uses the technical graph.
+      // For non-text packets an unresolvable route must not keep stale metadata.
       if (packetMap.routes.length || isTextPacket) {
         this._messageMap = packetMap;
       } else {
@@ -1711,68 +1707,6 @@ export class MapPage extends LitElement {
     };
   }
 
-  private _routeOverlay() {
-    const routes = this._messageMap?.routes || [];
-    const nodeMap = new Map<string, { point: MessageMapPoint; hop: number; sender: boolean }>();
-    routes.forEach(route => {
-      route.points.forEach((point, pointIndex) => {
-        const existing = nodeMap.get(point.key);
-        const sender = pointIndex === 0;
-        if (!existing || pointIndex < existing.hop) {
-          nodeMap.set(point.key, { point, hop: pointIndex, sender });
-        }
-      });
-    });
-
-    const segments: { from: MessageMapPoint; to: MessageMapPoint; secondary: boolean }[] = [];
-    routes.forEach((route, index) => {
-      for (let i = 0; i + 1 < route.points.length; i += 1) {
-        const from = route.points[i];
-        const to = route.points[i + 1];
-        if (!Number.isFinite(from.lat) || !Number.isFinite(from.lon)
-          || !Number.isFinite(to.lat) || !Number.isFinite(to.lon)) continue;
-        segments.push({ from, to, secondary: index > 0 });
-      }
-    });
-
-    // All overlay elements live inside ONE addressable <g>. The map pan
-    // gesture applies a translate3d() transform to .map-content; CSS
-    // transforms on an HTML container make SVG paint-server references
-    // (marker url(#id), <mpath>) fragile, so those attributes are applied
-    // imperatively after every render by _wireRouteOverlay() instead of
-    // being bound through Lit templates.
-    const segmentsTemplate = segments.map((segment, index) => {
-        const from = this._mapPoint(segment.from.lat, segment.from.lon);
-        const to = this._mapPoint(segment.to.lat, segment.to.lon);
-        return html`
-          <line data-route-line="${String(index)}"
-            class="message-route ${segment.secondary ? "secondary" : ""}"
-            x1="${from.left}" y1="${from.top}" x2="${to.left}" y2="${to.top}"></line>
-          <circle class="message-route-packet ${segment.secondary ? "secondary" : ""}" r="5">
-            <animateMotion dur=${segment.secondary ? "1.4s" : "1.1s"} repeatCount="indefinite" rotate="auto"></animateMotion>
-          </circle>
-        `;
-      });
-
-      const nodesTemplate = [...nodeMap.values()].map(({ point, hop, sender }) => {
-        const screen = this._mapPoint(point.lat, point.lon);
-        return svg`
-          <circle class="message-node ${sender ? "sender" : ""}" data-route-node-key="${point.key}" cx="${screen.left}" cy="${screen.top}" r="${sender ? 10 : 8}"></circle>
-          <circle class="message-node-core ${sender ? "sender" : ""}" data-route-node-key="${point.key}" cx="${screen.left}" cy="${screen.top}" r="4"></circle>
-          <text class="message-hop-label" data-route-node-key="${point.key}" x="${screen.left + 11}" y="${screen.top - 9}">${sender ? "Sender" : `${hop}. ${point.name}`}</text>
-        `;
-      });
-
-    return svg`<g class="message-route-overlay">${segmentsTemplate}${nodesTemplate}</g>`;
-  }
-
-  /**
-   * Re-apply paint-server references (arrowhead markers, packet motion
-   * paths) after each render. Setting them via setAttribute() guarantees the
-   * arrowheads and animated packets stay wired up regardless of how the
-   * shipped bundle was transpiled/minified — template-bound url(#…) strings
-   * proved unreliable in production WebViews, hiding exactly these icons.
-   */
   private static readonly ROUTE_ARROW_MARKER_ID = 'message-route-arrow';
 
   private _messageBubblePoint(): { left: number; top: number } {
