@@ -1395,7 +1395,7 @@ export class MapPage extends LitElement {
     this._messageUnsubscribers = [];
   }
 
-  private _findContactByHash(hash: string): Contact | undefined {
+  private _findContactByHash(hash: string, excludeKeys?: Set<string>): Contact | undefined {
     const normalized = hash.toLowerCase().replace(/[^0-9a-f]/g, '');
     if (!normalized) return undefined;
 
@@ -1408,13 +1408,20 @@ export class MapPage extends LitElement {
       return key.startsWith(normalized) || prefix.startsWith(normalized);
     });
     if (!matches.length) return undefined;
-    if (matches.length === 1) return matches[0];
 
-    // A short path hash can legitimately collide. Prefer a located contact,
-    // then the contact most recently modified by the local radio.
-    const located = matches.filter(hasCoordinates);
+    // One-byte path hashes can collide. When resolving one path, prefer a
+    // different matching contact that has not already been used. This prevents
+    // two consecutive hops from collapsing to the same vertex and dropping the
+    // connecting edge.
+    const available = excludeKeys?.size
+      ? matches.filter(contact => !excludeKeys.has(normalizeKey(contact.public_key)))
+      : matches;
+    const candidates = available.length ? available : matches;
+    if (candidates.length === 1) return candidates[0];
+
+    const located = candidates.filter(hasCoordinates);
     if (located.length === 1) return located[0];
-    return [...matches].sort((a, b) =>
+    return [...candidates].sort((a, b) =>
       (Number(b.lastmod) || Number(b.last_advert) || 0)
       - (Number(a.lastmod) || Number(a.last_advert) || 0),
     )[0];
@@ -1430,8 +1437,12 @@ export class MapPage extends LitElement {
     // Keep the exact radio path order. A hash may resolve to a contact even
     // when that contact has no advertised coordinates; such a node must still
     // remain visible in the route graph.
+    const usedContactKeys = new Set<string>();
     const points = hashes.map((hash, index) => {
-      const contact = this._findContactByHash(hash);
+      const contact = this._findContactByHash(hash, usedContactKeys);
+      if (contact?.public_key) {
+        usedContactKeys.add(String(contact.public_key).toLowerCase().replace(/[^0-9a-f]/g, ''));
+      }
       const coords = contact ? nodeCoordinates(contact) : null;
       return {
         key: contact?.public_key || `path:${hash}:${index}`,
