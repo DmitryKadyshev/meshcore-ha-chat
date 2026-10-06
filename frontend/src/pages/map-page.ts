@@ -823,24 +823,50 @@ export class MapPage extends LitElement {
 
     // Keep the "Show latest radio event" checkbox state unchanged. Selecting
     // history must not silently disable the mode selected by the user.
-    // The technical graph is rendered independently of the message overlay,
-    // so the selected historical packet can be shown while the checkbox
-    // remains enabled.
-    this._messageMap = null;
-
-    // A table row is a historical snapshot of the received path. Resolve it
-    // against the current contact store and use the exact same graph builder
-    // as a live RX_LOG_DATA packet. This keeps historical rows and live events
-    // visually identical.
     if (row.eventData && row.rxData) {
       this._latestRadioEventData = { ...row.eventData };
       this._latestRadioRx = { ...row.rxData };
-      this._recordFloodGraph(row.eventData, row.rxData);
-    } else {
-      this._graphEdges = this._buildGraphEdges(row.hashes, row.snr, row.rssi);
-      if (this._graphEdges.length) {
-        void this._refreshGraphView('RAW_EVENT row');
+
+      const payloadType = Number(row.rxData.payload_type);
+      const payloadTypeName = String(row.rxData.payload_typename || '')
+        .replace(/^EventType\\./i, '')
+        .toUpperCase();
+      const isTextPacket =
+        payloadType === 2 ||
+        payloadType === 5 ||
+        payloadTypeName === 'TEXT_MSG' ||
+        payloadTypeName === 'GRP_TXT';
+
+      // Keep the technical flood graph in sync with the selected historical
+      // packet, but use the message map as the authoritative user-facing
+      // route overlay, exactly like the live RX_LOG_DATA path.
+      if (this._showMessage) this._recordFloodGraph(row.eventData, row.rxData);
+
+      if (payloadType === 4 && isTextPacket) {
+        const advertMap = this._buildAdvertMap(row.rxData);
+        this._messageMap = advertMap;
+        if (!advertMap.routes.length) this._messageMap = null;
+        else this._fitMessage();
+        return;
       }
+
+      if (isTextPacket) {
+        const packetMap = this._buildPacketMap(row.rxData);
+        this._messageMap = packetMap;
+        this._fitMessage();
+        return;
+      }
+
+      // Non-text packets are technical events and have no message overlay.
+      this._messageMap = null;
+      if (this._graphEdges.length) void this._refreshGraphView('RAW_EVENT row');
+      return;
+    }
+
+    this._messageMap = null;
+    this._graphEdges = this._buildGraphEdges(row.hashes, row.snr, row.rssi);
+    if (this._graphEdges.length) {
+      void this._refreshGraphView('RAW_EVENT row');
     }
   }
 
