@@ -28,7 +28,6 @@ interface GraphEdge {
 interface RawRadioRow { id: number; type: string; route: string; path: string; message?: string; coordinates: string; telemetry: string; hashes: string[]; payloadType?: number; payloadName?: string; eventData?: Record<string, unknown>; rxData?: Record<string, unknown>; }
 
 interface PrivateMapPage {
-  _showMessage: boolean;
   _messageMap: MessageMapState | null;
   _graphEdges: GraphEdge[];
   _center: [number, number];
@@ -281,7 +280,6 @@ describe('MeshCore map technical radio route graph (RX_LOG_DATA)', () => {
   beforeEach(async () => {
     capturedHandlers = new Map();
     el = await mountMapPage();
-    priv(el)._showMessage = true;
     await el.updateComplete;
   });
 
@@ -1066,7 +1064,6 @@ describe('MeshCore map text message route (meshcore_message)', () => {
       makeContact('100005', 'Node 100005', 52.0, 12.0),
       makeContact('100006', 'Node 100006', 52.5, 12.5),
     ];
-    priv(el)._showMessage = false;
 
     fireRawEvent({
       event_type: 'RX_LOG_DATA',
