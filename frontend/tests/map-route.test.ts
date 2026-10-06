@@ -89,6 +89,9 @@ const NODE_DB94 = makeContact('db94', 'Node DB94', Number.NaN, Number.NaN);
 const NODE_565D = makeContact('565d', 'Node 565D', 52.0, 12.0);
 const NODE_694D = makeContact('694d', 'Node 694D', Number.NaN, Number.NaN);
 const CONTACTS: Contact[] = [NODE_5053, NODE_DB94, NODE_565D, NODE_694D];
+const COLLISION_A = makeContact('aa11', 'Collision A', 53.0, 13.0);
+const COLLISION_B = makeContact('aa22', 'Collision B', 54.0, 14.0);
+
 
 function makeConfig(overrides: Partial<PanelConfig> = {}): PanelConfig {
   return {
@@ -210,6 +213,22 @@ describe('MeshCore map route resolution (_resolvePathPoints)', () => {
     const mid = points[1];
     expect(mid.lat).toBeCloseTo(51.0, 5);
     expect(mid.lon).toBeCloseTo(11.0, 5);
+  });
+
+  it('keeps consecutive hops separate when a short path hash collides', () => {
+    el.contacts = [COLLISION_A, COLLISION_B, NODE_565D];
+    const points = priv(el)._resolvePathPoints(['aa', 'aa', '565d']);
+    expect(points).toHaveLength(3);
+    expect(points[0].name).toBe('Collision A');
+    expect(points[1].name).toBe('Collision B');
+    expect(points[2].name).toBe('Node 565D');
+
+    const edges = (priv(el)._buildGraphEdges(['aa', 'aa', '565d']) as GraphEdge[]);
+    expect(edges).toHaveLength(2);
+    expect(edges[0].from.name).toBe('Collision A');
+    expect(edges[0].to.name).toBe('Collision B');
+    expect(edges[1].from.name).toBe('Collision B');
+    expect(edges[1].to.name).toBe('Node 565D');
   });
 
   it('interpolates multiple unlocated hops between two anchors (A→B→C→D)', () => {
