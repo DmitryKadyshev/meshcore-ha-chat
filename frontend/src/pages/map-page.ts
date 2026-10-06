@@ -767,21 +767,9 @@ export class MapPage extends LitElement {
   private _showRadioRow(row: RawRadioRow) {
     this._selectedRadioRowId = row.id;
 
-    // Keep the "Show latest radio event" checkbox state unchanged. Selecting
-    // history must not silently disable the mode selected by the user.
     if (row.eventData && row.rxData) {
       this._latestRadioEventData = { ...row.eventData };
       this._latestRadioRx = { ...row.rxData };
-
-      const payloadType = Number(row.rxData.payload_type);
-      const payloadTypeName = String(row.rxData.payload_typename || '')
-        .replace(/^EventType\./i, '')
-        .toUpperCase();
-      const isTextPacket =
-        payloadType === 2 ||
-        payloadType === 5 ||
-        payloadTypeName === 'TEXT_MSG' ||
-        payloadTypeName === 'GRP_TXT';
       // History uses exactly the same technical graph and animation as a live packet.
       this._recordFloodGraph(row.eventData, row.rxData);
       this._messageMap = null;
@@ -1299,26 +1287,19 @@ export class MapPage extends LitElement {
           this._liveLastAdvert.set(advertKey, receivedMs);
           this._liveLastAdvert.set(advertKey.substring(0, 12), receivedMs);
         }
-
-        // Adverts get a dedicated message overlay anchored on the advertised
-        // node, not only the technical flood graph. The previous guard
-        // required isTextPacket (payload types 2/5), which is never true for
-        // payload_type=4 — the advert branch was dead code and only the
-        // technical graph was ever rendered.
+        // The technical graph above is the only map visualization; keep advert metadata for diagnostics.
         const advertMap = this._buildAdvertMap({
           ...rx,
           timestamp: data.timestamp,
         });
         this._messageMap = advertMap;
-        // An advert without resolvable coordinates must not keep showing a
-        // stale message route from a previous packet.
+        // An advert without resolvable coordinates must not keep stale route metadata.
         if (!advertMap.routes.length) {
           this._messageMap = null;
           if (this._graphEdges.length) void this._refreshGraphView('ADVERT');
-        } else {
         }
 
-        this._debugRadioEvent('ADVERT map built', data, {
+        this._debugRadioEvent('ADVERT received', data, {
           payloadType,
           name: advertMap.sender,
           target: advertMap.target,
